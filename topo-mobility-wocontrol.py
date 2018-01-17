@@ -1,5 +1,6 @@
 from mininet.net import Mininet
 from mininet.node import OVSSwitch
+from mininet.node import RemoteController
 from mininet.topo import LinearTopo
 from mininet.log import info, output, warn, setLogLevel
 from mininet.topo import Topo
@@ -59,6 +60,11 @@ class MobilitySwitch( OVSSwitch ):
         switch.addIntf( intf, port=port, rename=rename )
         switch.attach( intf )
 
+    def plsMoveIt(self, host, old, new):
+        h1, olds, news = net.get(host, old, new)
+        hintf, sintf = moveHost(h1, olds, news, newPort=12)
+        info( '*', hintf, 'is now connected to', sintf, '\n')
+
 
 class MyTopo(Topo):
 
@@ -99,7 +105,8 @@ def moveHost( host, oldSwitch, newSwitch, newPort=None ):
 def mobilityTest():
     "A simple test of mobility"
     info( '* Simple mobility test\n' )
-    net = Mininet( topo=MyTopo(), switch=MobilitySwitch)
+    global net
+    net = Mininet( topo=MyTopo(), switch=MobilitySwitch, controller=RemoteController)
     info( '* Starting network:\n' )
     net.interact()
 
