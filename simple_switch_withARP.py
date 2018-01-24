@@ -48,10 +48,8 @@ class SimpleSwitch(app_manager.RyuApp):
     ZERO_MAC = '00:00:00:00:00:00'
     BROADCAST_MAC = 'ff:ff:ff:ff:ff:ff'
     RYU_MAC = 'fe:ee:ee:ee:ee:ef'
-    HOST_MAC = '00:00:00:00:00:01'
     RYU_IP = '10.0.0.100'
-    HOST_IP = '10.0.0.1'
-    ARP_TABLE = {RYU_IP: RYU_MAC}
+    ARP_TABLE = {}
 
     def __init__(self, *args, **kwargs):
         super(SimpleSwitch, self).__init__(*args, **kwargs)
@@ -72,13 +70,13 @@ class SimpleSwitch(app_manager.RyuApp):
         datapath.send_msg(mod)
 
     def _send_msg(self, dp, data):
-        print "I am in _send_msg"
+        LOG.debug("I am in _send_msg")
         buffer_id = 0xffffffff
         in_port = dp.ofproto.OFPP_LOCAL
         actions = [dp.ofproto_parser.OFPActionOutput(1, 0)]
         msg = dp.ofproto_parser.OFPPacketOut(
             dp, buffer_id, in_port, actions, data)
-        print msg
+        LOG.debug(msg)
         dp.send_msg(msg)
 
     def _add_flow(self, dp, match, actions):
@@ -107,28 +105,30 @@ class SimpleSwitch(app_manager.RyuApp):
                 protocols['payload'] = p
         return protocols
 
-    def _build_ether(self, ethertype, dst_mac=HOST_MAC):
-        e = ethernet.ethernet(dst_mac, self.RYU_MAC, ethertype)
+    def _build_ether(self, ethertype, dst_mac, src_mac):
+        e = ethernet.ethernet(dst_mac, src_mac, ethertype)
         return e
 
     def _build_arp(self, opcode, src_ip, src_mac, dst_ip, dst_mac):
-        print "I am in _build_arp"
+        LOG.debug("I am in _build_arp")
         if opcode == arp.ARP_REQUEST:
             _eth_dst_mac = self.BROADCAST_MAC
             _arp_dst_mac = self.ZERO_MAC
-            print "I am in _build_arp in arp.ARP_REQUEST"
+            LOG.debug("I am in _build_arp in arp.ARP_REQUEST")
         elif opcode == arp.ARP_REPLY:
             _eth_dst_mac = dst_mac
             _arp_dst_mac = dst_mac
-            print "I am in _build_arp in arp.ARP_REPLY"
+            LOG.debug("I am in _build_arp in arp.ARP_REPLY")
 
-        e = self._build_ether(ether.ETH_TYPE_ARP, _eth_dst_mac)
+        e = self._build_ether(ether.ETH_TYPE_ARP, _eth_dst_mac, src_mac)
         a = arp.arp(hwtype=1, proto=ether.ETH_TYPE_IP, hlen=6, plen=4,
                     opcode=opcode, src_mac=src_mac, src_ip=src_ip,
                     dst_mac=_arp_dst_mac, dst_ip=dst_ip)
-        print e
-        print "######"
-        print a
+        LOG.debug("e")
+        LOG.debug(e)
+        LOG.debug("######")
+        LOG.debug("a")
+        LOG.debug(a)
         p = packet.Packet()
         p.add_protocol(e)
         p.add_protocol(a)
@@ -137,12 +137,22 @@ class SimpleSwitch(app_manager.RyuApp):
         return p
 
     def _build_echo(self, _type, echo, src_ip, dst_ip):
-        e = self._build_ether(ether.ETH_TYPE_IP)
+        LOG.debug("I am in _build_echo")
+        e = self._build_ether(ether.ETH_TYPE_IP, src_ip, dst_ip)
         ip = ipv4.ipv4(version=4, header_length=5, tos=0, total_length=84,
                        identification=0, flags=0, offset=0, ttl=64,
                        proto=inet.IPPROTO_ICMP, csum=0,
                        src=src_ip, dst=dst_ip)
         ping = icmp.icmp(_type, code=0, csum=0, data=echo)
+
+        print "I am in _build_echo"
+        print e
+        print ip
+        print ping
+
+        LOG.debug(e)
+        LOG.debug(ip)
+        LOG.debug(ping)
 
         p = packet.Packet()
         p.add_protocol(e)
@@ -155,8 +165,8 @@ class SimpleSwitch(app_manager.RyuApp):
     #     p = self._build_arp(arp.ARP_REQUEST, self.RYU_IP)
     #     return p.data
 
-    def _arp_request(self):
-        p = self._build_arp(arp.ARP_REQUEST, self.HOST_IP)
+    def _arp_request(self, src_ip, src_mac, dst_ip, dst_mac):
+        p = self._build_arp(arp.ARP_REQUEST, src_ip, src_mac, dst_ip, dst_mac)
         return p.data
 
     def _arp_reply(self, src_ip, src_mac, dst_ip, dst_mac):
@@ -175,11 +185,22 @@ class SimpleSwitch(app_manager.RyuApp):
     def _packet_in_handler(self, ev):
         msg = ev.msg
         dp = msg.datapath
+        ICMP_src_ip = 0
+        ICMP_dst_ip = 0
 
         ofproto = dp.ofproto
 
         pkt = packet.Packet(msg.data)
         eth = pkt.get_protocol(ethernet.ethernet)
+
+        dpid = dp.id
+        self.mac_to_port.setdefault(dpid, {})
+
+        # self.logger.info("packet in %s %s %s %s", dpid, eth.src, eth.dst, msg.in_port)
+
+        if eth.ethertype == ether_types.ETH_TYPE_LLDP:
+            # ignore lldp packet
+            return
 
         # arp from here
         pkt = packet.Packet(array.array('B', msg.data))
@@ -191,8 +212,10 @@ class SimpleSwitch(app_manager.RyuApp):
         #     data = self._arp_reply(p_arp.src_ip, p_arp.src_mac, p_arp.dst_ip, p_arp.dst_mac)
         #     self._send_msg(dp, data)
 
+        # IP - MAC mappings in  ryu
         if p_arp:
             src_ip = str(netaddr.IPAddress(p_arp.src_ip))
+            ICMP_src_ip = src_ip
             src_mac = str(p_arp.src_mac)
             if str(netaddr.IPAddress(p_arp.src_ip)) not in self.ARP_TABLE:
                 self.ARP_TABLE[str(src_ip)] = src_mac
@@ -212,6 +235,8 @@ class SimpleSwitch(app_manager.RyuApp):
                     print "my ARP_TABLEold"
 
             dst_ip = str(netaddr.IPAddress(p_arp.dst_ip))
+            ICMP_dst_ip = dst_ip
+
             dst_mac = str(p_arp.dst_mac)
             if dst_mac != self.ZERO_MAC and dst_mac != self.BROADCAST_MAC:
                 if str(netaddr.IPAddress(p_arp.dst_ip)) not in self.ARP_TABLE:
@@ -222,49 +247,59 @@ class SimpleSwitch(app_manager.RyuApp):
                     print self.ARP_TABLE
                     print "my ARP_TABLE2"
 
-        if eth.ethertype == ether_types.ETH_TYPE_LLDP:
-            # ignore lldp packet
-            return
-
-        if (p_arp and not self.ARP_TABLE.has_key(p_arp.dst_ip)) or (p_arp and p_arp.opcode == arp.ARP_REPLY) or p_icmp:
+        if (p_arp and not self.ARP_TABLE.has_key(p_arp.dst_ip)) or p_icmp:
             print "Not in the table, flooding now"
-            out_port = ofproto.OFPP_FLOOD
+            self.mac_to_port[dpid][eth.src] = msg.in_port
+
+            if eth.dst in self.mac_to_port[dpid]:
+                out_port = self.mac_to_port[dpid][eth.dst]
+            else:
+                out_port = ofproto.OFPP_FLOOD
+
             actions = [dp.ofproto_parser.OFPActionOutput(out_port)]
+
+            # install a flow to avoid packet_in next time
+            if out_port != ofproto.OFPP_FLOOD:
+                self.add_flow(dp, msg.in_port, eth.dst, eth.src, actions)
+
             data = None
+            if msg.buffer_id == ofproto.OFP_NO_BUFFER:
+                data = msg.data
 
             out = dp.ofproto_parser.OFPPacketOut(
                 datapath=dp, buffer_id=msg.buffer_id, in_port=msg.in_port,
                 actions=actions, data=data)
-
             dp.send_msg(out)
+
         elif p_arp and p_arp.opcode == arp.ARP_REQUEST and self.ARP_TABLE.has_key(p_arp.dst_ip):
             print "C0 will craft ARP_REPLY here"
             print "--- send Pkt: ARP_Reply #################"
             ARP_TABLE_dst_mac = self.ARP_TABLE.get(p_arp.dst_ip, "none")
-            print "ARP_TABLE_dst_mac"
-            print ARP_TABLE_dst_mac
+            LOG.debug("ARP_TABLE_dst_mac")
+            LOG.debug(ARP_TABLE_dst_mac)
             data = self._arp_reply(
-                p_arp.src_ip, p_arp.src_mac, p_arp.dst_ip, ARP_TABLE_dst_mac)
+                p_arp.dst_ip, ARP_TABLE_dst_mac, p_arp.src_ip, p_arp.src_mac)
             self._send_msg(dp, data)
 
         elif p_arp and p_arp.opcode == arp.ARP_REPLY:
             LOG.debug("--- PacketIn: ARP_Reply: %s->%s", src_ip, dst_ip)
             LOG.debug("--- send Pkt: Echo_RequestARP_REPLY")
             echo = icmp.echo(id_=66, seq=1)
-            data = self._echo_request(echo)
+            data = self._echo_request(echo, netaddr.IPAddress(p_arp.dst_ip), netaddr.IPAddress(p_arp.src_ip))
             self._send_msg(dp, data)
 
         # if p_icmp:
+        #     print "i am in if p_icmp"
         #     src = str(netaddr.IPAddress(p_ipv4.src))
         #     dst = str(netaddr.IPAddress(p_ipv4.dst))
         #     if p_icmp.type == icmp.ICMP_ECHO_REQUEST:
+        #         print "I am in if p_icmp.type == icmp.ICMP_ECHO_REQUEST:"
         #         LOG.debug("--- PacketIn: Echo_Request: %s->%s", src, dst)
-        #         if p_ipv4.dst == self.RYU_IP:
-        #             LOG.debug("--- send Pkt: Echo_Reply")
-        #             echo = p_icmp.data
-        #             echo.data = bytearray(echo.data)
-        #             data = self._echo_reply(echo)
-        #             self._send_msg(dp, data)
+        #         LOG.debug("--- send Pkt: Echo_Reply")
+        #         echo = p_icmp.data
+        #         echo.data = bytearray(echo.data)
+        #         data = self._echo_reply(echo, netaddr.IPAddress(ICMP_dst_ip), netaddr.IPAddress(ICMP_src_ip))
+        #         self._send_msg(dp, data)
         #     elif p_icmp.type == icmp.ICMP_ECHO_REPLY:
         #         LOG.debug("--- PacketIn: Echo_Reply: %s->%s", src, dst)
 
