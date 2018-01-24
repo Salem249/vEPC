@@ -238,7 +238,7 @@ class SimpleSwitch(app_manager.RyuApp):
 
             dp.send_msg(out)
         elif p_arp and p_arp.opcode == arp.ARP_REQUEST and self.ARP_TABLE.has_key(p_arp.dst_ip):
-            print "C0 will craft ARP_REPLY here ya Ahmad"
+            print "C0 will craft ARP_REPLY here"
             print "--- send Pkt: ARP_Reply #################"
             ARP_TABLE_dst_mac = self.ARP_TABLE.get(p_arp.dst_ip, "none")
             print "ARP_TABLE_dst_mac"
