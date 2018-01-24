@@ -5,6 +5,7 @@ import netaddr
 import thread
 import time
 import struct
+import host
 
 #Ryu
 from ryu.base import app_manager
@@ -63,16 +64,29 @@ class SimpleSwitch(app_manager.RyuApp):
                 if(port.hw_addr == mac):
                     return port
         return
+
+    def _findPortByHostMac(self, mac):
+        for  switch in self.networkMap.neighbors(self.cDummy):
+            for port in self.networkMap.neighbors(switch):
+                for thing in self.networkMap.neighbors(port):
+                    if isinstance(thing, host.host):
+                        if thing.mac == mac:
+                            return port
+
+    def _findMacByIP(self, ip):
+        for  switch in self.networkMap.neighbors(self.cDummy):
+            for port in self.networkMap.neighbors(switch):
+                for thing in self.networkMap.neighbors(port):
+                    if isinstance(thing, host.host):
+                        if thing.ip == ip:
+                            return thing.mac
+        
     
     def _findPortByPath(self, dp, port_no):
         for  switch in self.networkMap.neighbors(self.cDummy):
-            LOG.debug("---%s vs %s", dp, switch.dp)
             if(switch.dp.id == dp):
-                LOG.debug("--- Switch %s gefunden!", switch)
                 for port in self.networkMap.neighbors(switch):
-                    LOG.debug("--- Ueberpruefe %s und %s", port_no, port.port_no)
                     if (port_no == port_no):
-                        LOG.debug("--- Port %s gefunden!", port)
                         return port
         return
 
@@ -80,13 +94,12 @@ class SimpleSwitch(app_manager.RyuApp):
         for switch in self.networkMap.neighbors(self.cDummy):
             LOG.debug("--- Switch %s", switch)
             for port in self.networkMap.neighbors(switch):
-                LOG.debug("--- Port %s with addr %s", port.dpid, port.hw_addr)
+                LOG.debug("--- Port %s with addr %s", port.port_no, port.hw_addr)
                 for p in self.networkMap.neighbors(port):
                     LOG.debug("--- Connected to %s", p)
     
     def __init__(self, *args, **kwargs):
         super(SimpleSwitch, self).__init__(*args, **kwargs)
-        self.mac_to_port = {}
         self.networkMap = nx.DiGraph()
         self.cDummy = "Control"
         try:
@@ -129,18 +142,57 @@ class SimpleSwitch(app_manager.RyuApp):
                 dst_ip = str(netaddr.IPAddress(p_arp.dst_ip))
                 src_mac = str(p_arp.src_mac)
                 dst_mac = str(p_arp.dst_mac)
-                LOG.debug("--- ARP REQUEST found!!!: %s->%s\nMAC-Address src:%s\nMacAddress Dest:%s\n", src_ip, dst_ip, src_mac, dst_mac)
-                LOG.debug("--- Flood now")
+                LOG.debug("--- ARP REQUEST found!: %s->%s\nMAC-Address src:%s\nMacAddress Dest:%s\n", src_ip, dst_ip, src_mac, dst_mac)
+                #try to add src mac to network
+                if not self._findMacByIP(src_ip):
+                    self.networkMap.add_edge(self._findPortByPath(datapath.id, msg.match['in_port']), host.host(src_mac,src_ip))
+            
+                if self._findMacByIP(dst_ip):
+                    LOG.debug("--- I can answer this. ")
+                    dst_mac = self._findMacByIP(dst_ip)
+                    e = ethernet.ethernet(src_mac, dst_mac, ether.ETH_TYPE_ARP)
+                    a = arp.arp(hwtype=1, proto=ether.ETH_TYPE_IP, hlen=6, plen=4,
+                    opcode=arp.ARP_REPLY, src_mac=dst_mac, src_ip=dst_ip,
+                    dst_mac=src_mac, dst_ip=src_ip)
+                    p = packet.Packet()
+                    p.add_protocol(e)
+                    p.add_protocol(a) 
+                    p.serialize()
+                    actions = [parser.OFPActionOutput(msg.match['in_port'])]
+                    out = parser.OFPPacketOut(datapath=datapath,
+                                        buffer_id=ofproto_v1_2.OFP_NO_BUFFER,
+                                        actions=actions, in_port=ofproto_v1_2.OFPP_CONTROLLER,
+                                        data=p)
+                    datapath.send_msg(out)
+                    
+                else:
+                    LOG.debug("--- Flood now")
+                    actions = [parser.OFPActionOutput(ofproto_v1_2.OFPP_FLOOD)]
+                    out = parser.OFPPacketOut(datapath=datapath,
+                                      buffer_id=ofproto.OFP_NO_BUFFER,
+                                      in_port=in_port, actions=actions,
+                                      data=msg.data)
+                    datapath.send_msg(out)
 
-                actions = [parser.OFPActionOutput(ofproto_v1_2.OFPP_FLOOD)]
-                out = parser.OFPPacketOut(datapath=datapath,
-                                  buffer_id=ofproto.OFP_NO_BUFFER,
-                                  in_port=in_port, actions=actions,
-                                  data=msg.data)
-                datapath.send_msg(out)
+                    
                
             elif p_arp.opcode == arp.ARP_REPLY:
-                LOG.debug("ARP_Reply, I don't have to care for this")
+                port = self._findPortByHostMac(p_arp.dst_ip)
+                if port:
+                    actions = [parser.OFPActionOutput(port.port_no)]
+                    out = parser.OFPPacketOut(datapath=port.dpid,
+                                        buffer_id=ofproto_v1_2.OFP_NO_BUFFER,
+                                        actions=actions, in_port=ofproto_v1_2.OFPP_CONTROLLER,
+                                        data=msg.data)
+                    switch.dp.send_msg(out)
+                else:
+                    LOG.debug("--- Flood Reply")
+                    actions = [parser.OFPActionOutput(ofproto_v1_2.OFPP_FLOOD)]
+                    out = parser.OFPPacketOut(datapath=datapath,
+                                      buffer_id=ofproto.OFP_NO_BUFFER,
+                                      in_port=in_port, actions=actions,
+                                      data=msg.data)
+                    datapath.send_msg(out)
         elif self._find_protocol(pkt, "lldp"):
             LOG.debug("---LLDP Packet found")
             p_eth = self._find_protocol(pkt, "ethernet")
@@ -152,7 +204,6 @@ class SimpleSwitch(app_manager.RyuApp):
                 LOG.debug("%s konnte nicht gefunden werden", datapath.id)
         else:
             LOG.debug(" --- No Supported Protocol")
-            print(packet.Packet(msg.data).protocols)
             
 
     @set_ev_cls(event.EventSwitchEnter)
