@@ -72,14 +72,17 @@ class MyTopo(Topo):
 		Topo.__init__( self )
 		hostA = self.addHost('ha')
 		hostB = self.addHost('hb')
+		hostC = self.addHost('hc')
 		swA = self.addSwitch('s1')
 		swB = self.addSwitch('s2')
 		swC = self.addSwitch('s3')
 
 		self.addLink(hostA, swA)
 		self.addLink(hostB, swA)
+		self.addLink(hostC, swA)
 		self.addLink(swB, swA)
 		self.addLink(swB, swC)
+		
 
 topos = { 'mytopo': ( lambda: MyTopo() ) }
 
