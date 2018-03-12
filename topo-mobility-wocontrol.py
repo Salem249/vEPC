@@ -66,13 +66,14 @@ class MobilitySwitch( OVSSwitch ):
         info( '*', hintf, 'is now connected to', sintf, '\n')
 
 
+
 class MyTopo(Topo):
 
 	def __init__( self ):
 		Topo.__init__( self )
-		hostA = self.addHost('ha')
-		hostB = self.addHost('hb')
-		hostC = self.addHost('hc')
+		hostA = self.addHost('ha', ip=None)
+		hostB = self.addHost('hb', ip=None)
+		hostC = self.addHost('hc', ip=None)
 		swA = self.addSwitch('s1')
 		swB = self.addSwitch('s2')
 		swC = self.addSwitch('s3')
@@ -82,9 +83,16 @@ class MyTopo(Topo):
 		self.addLink(hostC, swA)
 		self.addLink(swB, swA)
 		self.addLink(swB, swC)
+
 		
 
 topos = { 'mytopo': ( lambda: MyTopo() ) }
+
+def startDHCPclient(host):
+        info("Start dhcp client on", host)
+        inf = host.defaultIntf()
+        info(host.cmd('dhclient -v -d -r', inf))
+        
 
 def printConnections( switches ):
     "Compactly print connected nodes to each switch"
@@ -106,11 +114,14 @@ def moveHost( host, oldSwitch, newSwitch, newPort=None ):
     return hintf, sintf
 
 def mobilityTest():
-    "A simple test of mobility"
-    info( '* Simple mobility test\n' )
+    info( '* creating mobility Network\n' )
     global net
-    net = Mininet( topo=MyTopo(), switch=MobilitySwitch, controller=RemoteController)
     info( '* Starting network:\n' )
+    net = Mininet( topo=MyTopo(), switch=MobilitySwitch, controller=RemoteController)
+    info( '* Get IP-Addresses for hosts..\n' )
+    startDHCPclient(net.get("ha"))
+    startDHCPclient(net.get("hb"))
+    startDHCPclient(net.get("hc"))
     net.interact()
 
 if __name__ == '__main__':

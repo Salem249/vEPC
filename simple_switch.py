@@ -21,6 +21,7 @@ from ryu.lib.packet import ethernet
 from ryu.lib.packet import ether_types
 from ryu.lib.packet import arp
 from ryu.lib.packet import lldp
+from ryu.lib.packet import dhcp
 from ryu.topology.switches import LLDPPacket
 
 
@@ -36,14 +37,14 @@ class SimpleSwitch(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_2.OFP_VERSION]
 
     def _execute_lldp(self, s):
-        time.sleep(4)
+        time.sleep(4000)
         LOG.debug("--- Sending LLDP request")
          #self._build_lldp()
         for  switch in self.networkMap.neighbors(self.cDummy):
             parser = switch.dp.ofproto_parser
             ofproto = switch.dp.ofproto
             for port in self.networkMap.neighbors(switch):
-                LOG.debug("--- Sending From Port %s", port.hw_addr)
+                #LOG.debug("--- Sending From Port %s", port.hw_addr)
                 data = LLDPPacket.lldp_packet(switch.dp.id, 1, port.hw_addr, 1)
                 actions = [parser.OFPActionOutput(port.port_no)]
                 out = parser.OFPPacketOut(datapath=switch.dp,
@@ -91,12 +92,13 @@ class SimpleSwitch(app_manager.RyuApp):
         return
 
     def _report(self):
-        for switch in self.networkMap.neighbors(self.cDummy):
-            LOG.debug("--- Switch %s", switch)
-            for port in self.networkMap.neighbors(switch):
-                LOG.debug("--- Port %s with addr %s", port.port_no, port.hw_addr)
-                for p in self.networkMap.neighbors(port):
-                    LOG.debug("--- Connected to %s", p)
+        return
+   #     for switch in self.networkMap.neighbors(self.cDummy):
+   #         LOG.debug("--- Switch %s", switch)
+   #         for port in self.networkMap.neighbors(switch):
+   #             LOG.debug("--- Port %s with addr %s", port.port_no, port.hw_addr)
+   #             for p in self.networkMap.neighbors(port):
+   #                 LOG.debug("--- Connected to %s", p)
     
     def __init__(self, *args, **kwargs):
         super(SimpleSwitch, self).__init__(*args, **kwargs)
@@ -194,16 +196,22 @@ class SimpleSwitch(app_manager.RyuApp):
                                       data=msg.data)
                     datapath.send_msg(out)
         elif self._find_protocol(pkt, "lldp"):
-            LOG.debug("---LLDP Packet found")
+            #LOG.debug("---LLDP Packet found")
             p_eth = self._find_protocol(pkt, "ethernet")
-            LOG.debug("from %s to %s", p_eth.src, datapath.id)
+            #LOG.debug("from %s to %s", p_eth.src, datapath.id)
             if (self._findMac(p_eth.src) and self._findPortByPath(datapath.id, msg.match['in_port'])):
-                LOG.debug("AkA %s", self._findPortByPath(datapath.id, msg.match['in_port']))
+                #LOG.debug("AkA %s", self._findPortByPath(datapath.id, msg.match['in_port']))
                 self.networkMap.add_edge(self._findMac(p_eth.src), self._findPortByPath(datapath.id, msg.match['in_port']))
             else:
                 LOG.debug("%s konnte nicht gefunden werden", datapath.id)
         else:
             LOG.debug(" --- No Supported Protocol")
+            pkt_dhcp = pkt.get_protocols(dhcp.dhcp)
+            if pkt_dhcp:
+                LOG.debug(" --- DHCP destected")
+            for p in pkt.protocols:
+                if hasattr(p, 'protocol_name'):
+                    LOG.debug(p.protocol_name)
             
 
     @set_ev_cls(event.EventSwitchEnter)
