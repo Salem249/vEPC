@@ -58,6 +58,25 @@ class SimpleSwitch(app_manager.RyuApp):
         
         self._execute_lldp(s)
 
+
+
+
+    def add_flow(self, datapath, in_port, dst, src, out_port, actions):
+        LOG.debug("--- Add FLow matching based on IPAddress")
+        ofproto = datapath.ofproto
+
+        match = datapath.ofproto_parser.OFPMatch(
+            in_port=in_port,
+            ipv4_dst=dst, ipv4_src=src, eth_type = 0x0800)
+        instructions =[datapath.ofproto_parser.OFPInstructionActions(ofproto_v1_2.OFPIT_APPLY_ACTIONS, actions=actions)]
+
+        mod = datapath.ofproto_parser.OFPFlowMod(
+            datapath=datapath, match=match, cookie=0, cookie_mask=0,
+            command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0, out_port=out_port, flags=ofproto.OFPFF_SEND_FLOW_REM, instructions=instructions)
+        datapath.send_msg(mod)
+        
+
+
     def _findMac(self, mac):
         for  switch in self.networkMap.neighbors(self.cDummy):
             for port in self.networkMap.neighbors(switch):
@@ -100,6 +119,7 @@ class SimpleSwitch(app_manager.RyuApp):
     
     def __init__(self, *args, **kwargs):
         super(SimpleSwitch, self).__init__(*args, **kwargs)
+        self.mac_to_port = {}
         self.networkMap = nx.DiGraph()
         self.cDummy = "Control"
         try:
@@ -133,6 +153,40 @@ class SimpleSwitch(app_manager.RyuApp):
         in_port = msg.match['in_port']
         
         pkt = packet.Packet(array.array('B', msg.data))
+
+        eth = pkt.get_protocol(ethernet.ethernet)
+
+
+
+        dpid = datapath.id
+        self.mac_to_port.setdefault(dpid, {})
+        p_icmp = self._find_protocol(pkt, "icmp")
+        p_ipv4 = self._find_protocol(pkt, "ipv4")
+
+
+
+        # The flow rules with test of icmp
+        if p_ipv4 and p_icmp:
+            LOG.debug("--- ICMP Packet!: \nIP Address src:%s\nIP Address Dest:%s\n", p_ipv4.src, p_ipv4.dst)
+            self.mac_to_port[dpid][eth.src] = in_port
+            if eth.dst in self.mac_to_port[dpid]:
+                out_port = self.mac_to_port[dpid][eth.dst]
+            else:
+                out_port = ofproto.OFPP_FLOOD
+
+            actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
+
+            # install a flow to avoid packet_in next time
+            if out_port != ofproto.OFPP_FLOOD:
+                self.add_flow(datapath, in_port, p_ipv4.dst, p_ipv4.src, out_port, actions)
+            data = None
+            if msg.buffer_id == ofproto.OFP_NO_BUFFER:
+                data = msg.data
+
+            out = datapath.ofproto_parser.OFPPacketOut(
+                datapath=datapath, buffer_id=msg.buffer_id, in_port=in_port,
+                actions=actions, data=data)
+            datapath.send_msg(out)
 
         if self._find_protocol(pkt, "arp"):
             p_arp = self._find_protocol(pkt, "arp")
