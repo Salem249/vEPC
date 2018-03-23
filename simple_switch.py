@@ -13,6 +13,7 @@ from ryu.controller import ofp_event
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.topology import event
+from ryu.lib import addrconv
 from ryu.ofproto import ofproto_v1_2
 from ryu.ofproto import ether
 from ryu.lib.mac import haddr_to_bin
@@ -22,6 +23,8 @@ from ryu.lib.packet import ether_types
 from ryu.lib.packet import arp
 from ryu.lib.packet import lldp
 from ryu.lib.packet import dhcp
+from ryu.lib.packet import ipv4
+from ryu.lib.packet import udp
 from ryu.topology.switches import LLDPPacket
 
 
@@ -120,6 +123,19 @@ class SimpleSwitch(app_manager.RyuApp):
         super(SimpleSwitch, self).__init__(*args, **kwargs)
         self.networkMap = nx.DiGraph()
         self.cDummy = "Control"
+
+        # dhcp init
+        self.hw_addr = '0a:e4:1c:d1:3e:44'
+        self.dhcp_server = '192.168.1.1'
+        self.netmask = '255.255.255.0'
+        self.dns = '8.8.8.8'
+        self.bin_dns = addrconv.ipv4.text_to_bin(self.dns)
+        self.hostname = 'huehuehue'
+        self.bin_netmask = addrconv.ipv4.text_to_bin(self.netmask)
+        self.bin_server = addrconv.ipv4.text_to_bin(self.dhcp_server)
+        self.ip_addr = '192.0.2.9'
+
+        #LLDP Deamon
         try:
             thread.start_new_thread(self._execute_lldp, (4,))
         except:
@@ -220,11 +236,11 @@ class SimpleSwitch(app_manager.RyuApp):
                 self.networkMap.add_edge(self._findMac(p_eth.src), self._findPortByPath(datapath.id, msg.match['in_port']))
             else:
                 LOG.debug("%s konnte nicht gefunden werden", datapath.id)
+        elif pkt.get_protocols(dhcp.dhcp):
+            self._handle_dhcp(datapath, in_port, pkt)
+            
         else:
             LOG.debug(" --- No Supported Protocol")
-            pkt_dhcp = pkt.get_protocols(dhcp.dhcp)
-            if pkt_dhcp:
-                LOG.debug(" --- DHCP destected")
             for p in pkt.protocols:
                 if hasattr(p, 'protocol_name'):
                     LOG.debug(p.protocol_name)
@@ -239,6 +255,111 @@ class SimpleSwitch(app_manager.RyuApp):
             nx.draw(self.networkMap, withLabel=True)
             #pl.show()
 
+    def assemble_ack(self, pkt):
+        req_eth = pkt.get_protocol(ethernet.ethernet)
+        req_ipv4 = pkt.get_protocol(ipv4.ipv4)
+        req_udp = pkt.get_protocol(udp.udp)
+        req = pkt.get_protocol(dhcp.dhcp)
+        req.options.option_list.remove(
+            next(opt for opt in req.options.option_list if opt.tag == 53))
+        req.options.option_list.insert(0, dhcp.option(tag=51, value='8640'))
+        req.options.option_list.insert(
+            0, dhcp.option(tag=53, value='05'.decode('hex')))
+
+        ack_pkt = packet.Packet()
+        ack_pkt.add_protocol(ethernet.ethernet(
+            ethertype=req_eth.ethertype, dst=req_eth.src, src=self.hw_addr))
+        ack_pkt.add_protocol(
+            ipv4.ipv4(dst=req_ipv4.dst, src=self.dhcp_server, proto=req_ipv4.proto))
+        ack_pkt.add_protocol(udp.udp(src_port=67, dst_port=68))
+        ack_pkt.add_protocol(dhcp.dhcp(op=2, chaddr=req_eth.src,
+                                       siaddr=self.dhcp_server,
+                                       boot_file=req.boot_file,
+                                       yiaddr=self.ip_addr,
+                                       xid=req.xid,
+                                       options=req.options))
+        LOG.debug("ASSEMBLED ACK: %s" % ack_pkt)
+        return ack_pkt
+
+    def assemble_offer(self, pkt):
+        disc_eth = pkt.get_protocol(ethernet.ethernet)
+        disc_ipv4 = pkt.get_protocol(ipv4.ipv4)
+        disc_udp = pkt.get_protocol(udp.udp)
+        disc = pkt.get_protocol(dhcp.dhcp)
+        disc.options.option_list.remove(
+            next(opt for opt in disc.options.option_list if opt.tag == 55))
+        disc.options.option_list.remove(
+            next(opt for opt in disc.options.option_list if opt.tag == 53))
+        disc.options.option_list.remove(
+            next(opt for opt in disc.options.option_list if opt.tag == 12))
+        disc.options.option_list.insert(
+            0, dhcp.option(tag=1, value=self.bin_netmask))
+        disc.options.option_list.insert(
+            0, dhcp.option(tag=3, value=self.bin_server))
+        disc.options.option_list.insert(
+            0, dhcp.option(tag=6, value=self.bin_dns))
+        disc.options.option_list.insert(
+            0, dhcp.option(tag=12, value=self.hostname))
+        disc.options.option_list.insert(
+            0, dhcp.option(tag=53, value='02'.decode('hex')))
+        disc.options.option_list.insert(
+            0, dhcp.option(tag=54, value=self.bin_server))
+
+        offer_pkt = packet.Packet()
+        offer_pkt.add_protocol(ethernet.ethernet(
+            ethertype=disc_eth.ethertype, dst=disc_eth.src, src=self.hw_addr))
+        offer_pkt.add_protocol(
+            ipv4.ipv4(dst=disc_ipv4.dst, src=self.dhcp_server, proto=disc_ipv4.proto))
+        offer_pkt.add_protocol(udp.udp(src_port=67, dst_port=68))
+        offer_pkt.add_protocol(dhcp.dhcp(op=2, chaddr=disc_eth.src,
+                                         siaddr=self.dhcp_server,
+                                         boot_file=disc.boot_file,
+                                         yiaddr=self.ip_addr,
+                                         xid=disc.xid,
+                                         options=disc.options))
+        LOG.debug("ASSEMBLED OFFER: %s" % offer_pkt)
+        return offer_pkt
+
+    def get_state(self, pkt_dhcp):
+        dhcp_state = ord(
+            [opt for opt in pkt_dhcp.options.option_list if opt.tag == 53][0].value)
+        if dhcp_state == 1:
+            state = 'DHCPDISCOVER'
+        elif dhcp_state == 2:
+            state = 'DHCPOFFER'
+        elif dhcp_state == 3:
+            state = 'DHCPREQUEST'
+        elif dhcp_state == 5:
+            state = 'DHCPACK'
+        return state
+
+    def _handle_dhcp(self, datapath, port, pkt):
+
+        pkt_dhcp = pkt.get_protocols(dhcp.dhcp)[0]
+        dhcp_state = self.get_state(pkt_dhcp)
+        LOG.debug("NEW DHCP %s PACKET RECEIVED: %s" %
+                         (dhcp_state, pkt_dhcp))
+        if dhcp_state == 'DHCPDISCOVER':
+            self._send_packet(datapath, port, self.assemble_offer(pkt))
+        elif dhcp_state == 'DHCPREQUEST':
+            self._send_packet(datapath, port, self.assemble_ack(pkt))
+        else:
+            return
+
+    def _send_packet(self, datapath, port, pkt):
+        print("Sending packet back")
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        pkt.serialize()
+        self.logger.info("packet-out %s" % (pkt,))
+        data = pkt.data
+        actions = [parser.OFPActionOutput(port=port)]
+        out = parser.OFPPacketOut(datapath=datapath,
+                                  buffer_id=ofproto.OFP_NO_BUFFER,
+                                  in_port=ofproto.OFPP_CONTROLLER,
+                                  actions=actions,
+                                  data=data)
+        datapath.send_msg(out)
 
 """
     def _build_lldp(self):
