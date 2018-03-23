@@ -10,7 +10,7 @@ import host
 #Ryu
 from ryu.base import app_manager
 from ryu.controller import ofp_event
-from ryu.controller.handler import MAIN_DISPATCHER
+from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.topology import event
 from ryu.ofproto import ofproto_v1_2
@@ -58,6 +58,22 @@ class SimpleSwitch(app_manager.RyuApp):
         
         
         self._execute_lldp(s)
+
+    @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
+    def _switch_features_handler(self, ev):
+        msg = ev.msg
+        datapath = msg.datapath
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        actions = [parser.OFPActionOutput(port=ofproto.OFPP_CONTROLLER,
+                                          max_len=ofproto.OFPCML_NO_BUFFER)]
+        inst = [parser.OFPInstructionActions(type_=ofproto.OFPIT_APPLY_ACTIONS,
+                                             actions=actions)]
+        mod = parser.OFPFlowMod(datapath=datapath,
+                                priority=0,
+                                match=parser.OFPMatch(),
+                                instructions=inst)
+        datapath.send_msg(mod)
 
     def _findMac(self, mac):
         for  switch in self.networkMap.neighbors(self.cDummy):
@@ -134,7 +150,7 @@ class SimpleSwitch(app_manager.RyuApp):
         ofproto = datapath.ofproto
         in_port = msg.match['in_port']
         
-        pkt = packet.Packet(array.array('B', msg.data))
+        pkt = packet.Packet(data=msg.data)
 
         if self._find_protocol(pkt, "arp"):
             p_arp = self._find_protocol(pkt, "arp")
