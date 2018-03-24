@@ -27,6 +27,10 @@ from ryu.lib.packet import ipv4
 from ryu.lib.packet import udp
 from ryu.topology.switches import LLDPPacket
 
+from protocol_handler import dhcp_handler
+from netmap import netmap
+
+
 
 #Networkx
 import networkx as nx
@@ -42,7 +46,6 @@ class SimpleSwitch(app_manager.RyuApp):
     def _execute_lldp(self, s):
         time.sleep(4000)
         LOG.debug("--- Sending LLDP request")
-         #self._build_lldp()
         for  switch in self.networkMap.neighbors(self.cDummy):
             parser = switch.dp.ofproto_parser
             ofproto = switch.dp.ofproto
@@ -50,6 +53,7 @@ class SimpleSwitch(app_manager.RyuApp):
                 #LOG.debug("--- Sending From Port %s", port.hw_addr)
                 data = LLDPPacket.lldp_packet(switch.dp.id, 1, port.hw_addr, 1)
                 actions = [parser.OFPActionOutput(port.port_no)]
+                
                 out = parser.OFPPacketOut(datapath=switch.dp,
                                     buffer_id=ofproto_v1_2.OFP_NO_BUFFER,
                                     actions=actions, in_port=ofproto_v1_2.OFPP_CONTROLLER,
@@ -78,37 +82,7 @@ class SimpleSwitch(app_manager.RyuApp):
                                 instructions=inst)
         datapath.send_msg(mod)
 
-    def _findMac(self, mac):
-        for  switch in self.networkMap.neighbors(self.cDummy):
-            for port in self.networkMap.neighbors(switch):
-                if(port.hw_addr == mac):
-                    return port
-        return
 
-    def _findPortByHostMac(self, mac):
-        for  switch in self.networkMap.neighbors(self.cDummy):
-            for port in self.networkMap.neighbors(switch):
-                for thing in self.networkMap.neighbors(port):
-                    if isinstance(thing, host.host):
-                        if thing.mac == mac:
-                            return port
-
-    def _findMacByIP(self, ip):
-        for  switch in self.networkMap.neighbors(self.cDummy):
-            for port in self.networkMap.neighbors(switch):
-                for thing in self.networkMap.neighbors(port):
-                    if isinstance(thing, host.host):
-                        if thing.ip == ip:
-                            return thing.mac
-        
-    
-    def _findPortByPath(self, dp, port_no):
-        for  switch in self.networkMap.neighbors(self.cDummy):
-            if(switch.dp.id == dp):
-                for port in self.networkMap.neighbors(switch):
-                    if (port_no == port_no):
-                        return port
-        return
 
     def _report(self):
         return
@@ -121,19 +95,9 @@ class SimpleSwitch(app_manager.RyuApp):
     
     def __init__(self, *args, **kwargs):
         super(SimpleSwitch, self).__init__(*args, **kwargs)
-        self.networkMap = nx.DiGraph()
-        self.cDummy = "Control"
-
-        # dhcp init
-        self.hw_addr = '0a:e4:1c:d1:3e:44'
-        self.dhcp_server = '192.168.1.1'
-        self.netmask = '255.255.255.0'
-        self.dns = '8.8.8.8'
-        self.bin_dns = addrconv.ipv4.text_to_bin(self.dns)
-        self.hostname = 'huehuehue'
-        self.bin_netmask = addrconv.ipv4.text_to_bin(self.netmask)
-        self.bin_server = addrconv.ipv4.text_to_bin(self.dhcp_server)
-        self.ip_addr = '192.0.2.9'
+        
+        #Instance of DHCP Handler
+        self.dhcp_h = dhcp_handler.dhcp_handler(self.networkMap)
 
         #LLDP Deamon
         try:
@@ -146,16 +110,6 @@ class SimpleSwitch(app_manager.RyuApp):
             if hasattr(p, 'protocol_name'):
                 if p.protocol_name == name:
                     return p
-
-    def _addSwitch(self, switch):
-        LOG.debug("--- SWITCH Connected: ---\n%s", switch)
-        LOG.debug("--- Adding %s to network ---\n", switch)
-        self.networkMap.add_edge(self.cDummy, switch)
-        LOG.debug("--- Adding Ports to network ---\n")
-        for port in switch.ports:
-            self.networkMap.add_edge(switch, port)
-            LOG.debug("--- Port number %s", port.port_no)
-            LOG.debug("--- Added %s ---\n", port.hw_addr)
         
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER) 
@@ -178,6 +132,7 @@ class SimpleSwitch(app_manager.RyuApp):
                 dst_mac = str(p_arp.dst_mac)
                 LOG.debug("--- ARP REQUEST found!: %s->%s\nMAC-Address src:%s\nMacAddress Dest:%s\n", src_ip, dst_ip, src_mac, dst_mac)
                 #try to add src mac to network
+                
                 if not self._findMacByIP(src_ip):
                     self.networkMap.add_edge(self._findPortByPath(datapath.id, msg.match['in_port']), host.host(src_mac,src_ip))
             
@@ -237,7 +192,9 @@ class SimpleSwitch(app_manager.RyuApp):
             else:
                 LOG.debug("%s konnte nicht gefunden werden", datapath.id)
         elif pkt.get_protocols(dhcp.dhcp):
-            self._handle_dhcp(datapath, in_port, pkt)
+            toSend = self.dhcp_h._handle_dhcp(pkt)
+            if toSend:
+                self._send_packet(datapath, in_port, toSend)
             
         else:
             LOG.debug(" --- No Supported Protocol")
@@ -255,29 +212,18 @@ class SimpleSwitch(app_manager.RyuApp):
             nx.draw(self.networkMap, withLabel=True)
             #pl.show()
 
-
-"""
-    def _build_lldp(self):
-        e = ethernet.ethernet(lldp.LLDP_MAC_NEAREST_BRIDGE, 'DD:DD:DD:DD:DD:DD', ether.ETH_TYPE_LLDP)
-        system = lldp.SystemName(system_name='test')
-
-        #tlv_chassis = lldp.ChassisID(
-        #                subtype=lldp.ChassisID.SUB_LOCALLY_ASSIGNED,
-        #                chassis_id='13')
-        #tlv_port_id = lldp.PortID(subtype=lldp.PortID.SUB_PORT_COMPONENT,
-        #                          port_id=struct.pack('!I',12))
-        #tlv_ttl = lldp.TTL(ttl=12)
-        #tlv_end = lldp.End()
-        #tlvs = (tlv_chassis, tlv_port_id, tlv_ttl, tlv_end)
-        p = packet.Packet()
-        tlvs = (system,)
-        l = lldp.lldp(tlvs)
-        LOG.debug("-----lldp output %s", l)
-        p.add_protocol(l)
-        p.add_protocol(e)
-        LOG.debug("-----send LLDP with proto %s", p.protocols)
-        p.serialize()
-        LOG.debug("-----send LLDP with proto %s", p.protocols)
-        return LLDPPacket.lldp_packet(dp.id, port_no, port_mac, 1)
-"""
-                    
+    def _send_packet(self, datapath, port, pkt):
+        print("Sending packet back")
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        pkt.serialize()
+        self.logger.info("packet-out %s" % (pkt,))
+        data = pkt.data
+        actions = [parser.OFPActionOutput(port=port)]
+        out = parser.OFPPacketOut(datapath=datapath,
+                                  buffer_id=ofproto.OFP_NO_BUFFER,
+                                  in_port=ofproto.OFPP_CONTROLLER,
+                                  actions=actions,
+                                  data=data)
+        datapath.send_msg(out)
+        
