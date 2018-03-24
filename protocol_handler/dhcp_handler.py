@@ -46,8 +46,8 @@ class dhcp_handler:
         self.bin_netmask = addrconv.ipv4.text_to_bin(self.netmask)
         self.bin_server = addrconv.ipv4.text_to_bin(self.dhcp_server)
         self.bin_dns = addrconv.ipv4.text_to_bin(self.dns)
-
         self.networkMap = network
+        
 
 
     def _getNextAddr(self):
@@ -162,14 +162,5 @@ class dhcp_handler:
         elif dhcp_state == 5:
             state = 'DHCPACK'
         return state
-
-    
-    def _findIPByMac(self, mac):
-        for  switch in self.networkMap.neighbors("Control"):
-            for port in self.networkMap.neighbors(switch):
-                for thing in self.networkMap.neighbors(port):
-                    if isinstance(thing, host.host):
-                        if thing.mac == mac:
-                            return thing.ip
 
 
