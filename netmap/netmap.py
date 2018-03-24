@@ -7,13 +7,13 @@ class netmap:
         DisconnectedObject = "Disconnected"
         self.networkMap = nx.DiGraph()
 
-    def _findMac(self, mac):
+    def findMac(self, mac):
         for  switch in self.networkMap.neighbors(self.cDummy):
             for port in self.networkMap.neighbors(switch):
                 if(port.hw_addr == mac):
                     return port
 
-    def _findPortByHostMac(self, mac):
+    def findPortByHostMac(self, mac):
         for  switch in self.networkMap.neighbors(self.cDummy):
             for port in self.networkMap.neighbors(switch):
                 for thing in self.networkMap.neighbors(port):
@@ -21,42 +21,48 @@ class netmap:
                         if thing.mac == mac:
                             return port
 
-    def _findMacByIP(self, ip):
+    def findActiveHostByIP(self, ip):
         for  switch in self.networkMap.neighbors(self.cDummy):
             for port in self.networkMap.neighbors(switch):
                 for thing in self.networkMap.neighbors(port):
                     if isinstance(thing, host.host):
                         if thing.ip == ip:
-                            return thing.mac
+                            return thing
 
-    def _findIPByMac(self, mac):
+    def findActiveHostByMac(self, mac):
         for  switch in self.networkMap.neighbors("Control"):
             for port in self.networkMap.neighbors(switch):
                 for thing in self.networkMap.neighbors(port):
                     if isinstance(thing, host.host):
                         if thing.mac == mac:
-                            return thing.ip
+                            return thing
+
+    def isInactiveHost(self, nac):
+        for thing in self.networkMap.neighbors("Disconnected"):
+            if isinstance(thing, host.host):
+                if thing.mac == mac:
+                    return thing
+
+    def removeHost(host, datapath, port):
+        return
         
-    
-    def _findPortByPath(self, dp, port_no):
+    def findPortByPath(self, dp, port_no):
         for  switch in self.networkMap.neighbors(self.cDummy):
             if(switch.dp.id == dp):
                 for port in self.networkMap.neighbors(switch):
                     if (port_no == port_no):
                         return port
 
-    def _addSwitch(self, switch):
-        LOG.debug("--- SWITCH Connected: ---\n%s", switch)
-        LOG.debug("--- Adding %s to network ---\n", switch)
+    def addSwitch(self, switch):
         self.networkMap.add_edge(self.cDummy, switch)
-        LOG.debug("--- Adding Ports to network ---\n")
         for port in switch.ports:
             self.networkMap.add_edge(switch, port)
-            LOG.debug("--- Port number %s", port.port_no)
-            LOG.debug("--- Added %s ---\n", port.hw_addr)
 
+    def addActiveHost(self, datapath, port, host):
+        if not self._findActiveHostByMac(host.mac):
+            self.networkMap.add_edge(self._findPortByPath(datapath.id, port), host)
+        
     
-    
-
-
-
+    def addUndifinedHost(self, host):
+        if not self._findInactiveHostByMac(host.mac):
+            self.networkMap.add_edge(self._findPortByPath(datapath.id, port), host)

@@ -31,13 +31,6 @@ from protocol_handler import dhcp_handler
 from netmap import netmap
 
 
-
-#Networkx
-import networkx as nx
-
-#Plotter
-import matplotlib.pyplot as pl
-
 LOG = logging.getLogger(__name__)
 
 class SimpleSwitch(app_manager.RyuApp):
@@ -95,6 +88,9 @@ class SimpleSwitch(app_manager.RyuApp):
     
     def __init__(self, *args, **kwargs):
         super(SimpleSwitch, self).__init__(*args, **kwargs)
+
+        #Instance of the NetworkMap
+        self.networkMap = netmap.netmap()
         
         #Instance of DHCP Handler
         self.dhcp_h = dhcp_handler.dhcp_handler(self.networkMap)
@@ -208,9 +204,7 @@ class SimpleSwitch(app_manager.RyuApp):
         if ev.switch is not None:
             switch = ev.switch
             self._addSwitch(switch)
-            pl.subplot(121)
-            nx.draw(self.networkMap, withLabel=True)
-            #pl.show()
+
 
     def _send_packet(self, datapath, port, pkt):
         print("Sending packet back")
