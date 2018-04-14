@@ -105,6 +105,40 @@ class SimpleSwitch(app_manager.RyuApp):
         
         pkt = packet.Packet(data=msg.data)
 
+        eth = pkt.get_protocol(ethernet.ethernet)
+
+
+
+        dpid = datapath.id
+        self.mac_to_port.setdefault(dpid, {})
+        p_icmp = self._find_protocol(pkt, "icmp")
+        p_ipv4 = self._find_protocol(pkt, "ipv4")
+
+
+
+        # The flow rules with test of icmp
+        if p_ipv4 and p_icmp:
+            LOG.debug("--- ICMP Packet!: \nIP Address src:%s\nIP Address Dest:%s\n", p_ipv4.src, p_ipv4.dst)
+            self.mac_to_port[dpid][eth.src] = in_port
+            if eth.dst in self.mac_to_port[dpid]:
+                out_port = self.mac_to_port[dpid][eth.dst]
+            else:
+                out_port = ofproto.OFPP_FLOOD
+
+            actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
+
+            # install a flow to avoid packet_in next time
+            if out_port != ofproto.OFPP_FLOOD:
+                self.add_flow(datapath, in_port, p_ipv4.dst, p_ipv4.src, out_port, actions)
+            data = None
+            if msg.buffer_id == ofproto.OFP_NO_BUFFER:
+                data = msg.data
+
+            out = datapath.ofproto_parser.OFPPacketOut(
+                datapath=datapath, buffer_id=msg.buffer_id, in_port=in_port,
+                actions=actions, data=data)
+            datapath.send_msg(out)
+
         if self._find_protocol(pkt, "arp"):
             p_arp = self._find_protocol(pkt, "arp")
             LOG.debug("ARP %s", p_arp.opcode)
