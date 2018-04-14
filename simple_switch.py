@@ -37,13 +37,12 @@ class SimpleSwitch(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_2.OFP_VERSION]
 
     def _execute_lldp(self, s):
-        time.sleep(4000)
+        time.sleep(4)
         LOG.debug("--- Sending LLDP request")
-        for  switch in self.networkMap.neighbors(self.cDummy):
+        for  switch in self.networkMap.networkMap.neighbors("Control"):
             parser = switch.dp.ofproto_parser
             ofproto = switch.dp.ofproto
-            for port in self.networkMap.neighbors(switch):
-                #LOG.debug("--- Sending From Port %s", port.hw_addr)
+            for port in self.networkMap.networkMap.neighbors(switch):
                 data = LLDPPacket.lldp_packet(switch.dp.id, 1, port.hw_addr, 1)
                 actions = [parser.OFPActionOutput(port.port_no)]
                 
@@ -52,11 +51,8 @@ class SimpleSwitch(app_manager.RyuApp):
                                     actions=actions, in_port=ofproto_v1_2.OFPP_CONTROLLER,
                                     data=data)
                 switch.dp.send_msg(out)
-        self._report()
-        #nx.draw(self.networkMap, withLabel=True)
-        #pl.show() 
         
-        
+        self.networkMap.report()
         self._execute_lldp(s)
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
@@ -76,15 +72,6 @@ class SimpleSwitch(app_manager.RyuApp):
         datapath.send_msg(mod)
 
 
-
-    def _report(self):
-        return
-   #     for switch in self.networkMap.neighbors(self.cDummy):
-   #         LOG.debug("--- Switch %s", switch)
-   #         for port in self.networkMap.neighbors(switch):
-   #             LOG.debug("--- Port %s with addr %s", port.port_no, port.hw_addr)
-   #             for p in self.networkMap.neighbors(port):
-   #                 LOG.debug("--- Connected to %s", p)
     
     def __init__(self, *args, **kwargs):
         super(SimpleSwitch, self).__init__(*args, **kwargs)
@@ -129,12 +116,12 @@ class SimpleSwitch(app_manager.RyuApp):
                 LOG.debug("--- ARP REQUEST found!: %s->%s\nMAC-Address src:%s\nMacAddress Dest:%s\n", src_ip, dst_ip, src_mac, dst_mac)
                 #try to add src mac to network
                 
-                if not self._findMacByIP(src_ip):
-                    self.networkMap.add_edge(self._findPortByPath(datapath.id, msg.match['in_port']), host.host(src_mac,src_ip))
+                if not self.networkMap.findActiveHostByIP(src_ip):
+                    self.networkMap.addActiveHost(datapath, msg.match['in_port'], host.host(src_mac,src_ip))
             
-                if self._findMacByIP(dst_ip):
+                if self.networkMap.findActiveHostByIP(dst_ip):
                     LOG.debug("--- I can answer this. ")
-                    dst_mac = self._findMacByIP(dst_ip)
+                    dst_mac = self.networkMap.findHostByIP(dst_ip).mac
                     e = ethernet.ethernet(src_mac, dst_mac, ether.ETH_TYPE_ARP)
                     a = arp.arp(hwtype=1, proto=ether.ETH_TYPE_IP, hlen=6, plen=4,
                     opcode=arp.ARP_REPLY, src_mac=dst_mac, src_ip=dst_ip,
@@ -162,7 +149,7 @@ class SimpleSwitch(app_manager.RyuApp):
                     
                
             elif p_arp.opcode == arp.ARP_REPLY:
-                port = self._findPortByHostMac(p_arp.dst_ip)
+                port = self.networkMap.findPortByHostMac(p_arp.dst_mac)
                 if port:
                     actions = [parser.OFPActionOutput(port.port_no)]
                     out = parser.OFPPacketOut(datapath=port.dpid,
@@ -182,9 +169,9 @@ class SimpleSwitch(app_manager.RyuApp):
             #LOG.debug("---LLDP Packet found")
             p_eth = self._find_protocol(pkt, "ethernet")
             #LOG.debug("from %s to %s", p_eth.src, datapath.id)
-            if (self._findMac(p_eth.src) and self._findPortByPath(datapath.id, msg.match['in_port'])):
+            if (self.networkMap.findPortbyPortMac(p_eth.src) and self.networkMap.findPortByPath(datapath.id, msg.match['in_port'])):
                 #LOG.debug("AkA %s", self._findPortByPath(datapath.id, msg.match['in_port']))
-                self.networkMap.add_edge(self._findMac(p_eth.src), self._findPortByPath(datapath.id, msg.match['in_port']))
+                self.networkMap.networkMap.add_edge(self.networkMap.findPortbyPortMac(p_eth.src), self.networkMap.findPortByPath(datapath.id, msg.match['in_port']))
             else:
                 LOG.debug("%s konnte nicht gefunden werden", datapath.id)
         elif pkt.get_protocols(dhcp.dhcp):
@@ -203,7 +190,7 @@ class SimpleSwitch(app_manager.RyuApp):
     def get_topology_data(self, ev):
         if ev.switch is not None:
             switch = ev.switch
-            self._addSwitch(switch)
+            self.networkMap.addSwitch(switch)
 
 
     def _send_packet(self, datapath, port, pkt):

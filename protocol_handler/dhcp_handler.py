@@ -29,6 +29,7 @@ from ryu.lib.packet import ipv4
 from ryu.lib.packet import packet
 from ryu.lib.packet import udp
 from ryu.ofproto import ofproto_v1_2
+import host
 
 
 class dhcp_handler:
@@ -36,7 +37,7 @@ class dhcp_handler:
     def __init__(self, network):
         # DHCP Config
         self.hw_addr = '0a:e4:1c:d1:3e:44'
-        self.dhcp_server = '192.168.1.1'
+        self.dhcp_server = '192.168.2.1'
         self.netmask = '255.255.255.0'
         self.dns = '8.8.8.8'
         self.hostname = 'VPEC Controller'
@@ -70,12 +71,16 @@ class dhcp_handler:
         pkt_dhcp = pkt.get_protocols(dhcp.dhcp)[0]
         dhcp_state = self.get_state(pkt_dhcp)
         if dhcp_state == 'DHCPDISCOVER':
-            old_ip = self._findIPByMac(pkt.get_protocol(ethernet.ethernet).src)
-            if old_ip:
-                ip = old_ip
+            known = self.networkMap.findActiveHostByMac(pkt.get_protocol(ethernet.ethernet).src)
+            print("-------------SELBSTCHECK")
+            if known:
+                ip = known.ip
             else:
                 ip = self._getNextAddr()
+                print("-------------SELBSTCHECK UNKNOWN")
             if ip: #only interesting when adressspace is empty
+                print("-------------SELBSTCHECK IP")
+                self.networkMap.addInactiveHost(host.host(pkt.get_protocol(ethernet.ethernet).src, ip))
                 return self.assemble_offer(pkt,ip)
             else:
                 return None
@@ -90,11 +95,21 @@ class dhcp_handler:
         req_ipv4 = pkt.get_protocol(ipv4.ipv4)
         req_udp = pkt.get_protocol(udp.udp)
         req = pkt.get_protocol(dhcp.dhcp)
+        if not (self.networkMap.findInactiveHostByMac(req_eth.src)):
+            return
+        print("-----------------------FIND MAC %s", req_eth.src)
+        print("test %s", self.networkMap.findInactiveHostByMac(req_eth.src))
         req.options.option_list.remove(
             next(opt for opt in req.options.option_list if opt.tag == 53))
         req.options.option_list.insert(0, dhcp.option(tag=51, value='8640'))
         req.options.option_list.insert(
             0, dhcp.option(tag=53, value='05'.decode('hex')))
+        req.options.option_list.insert(
+            0, dhcp.option(tag=1, value=self.bin_netmask))
+        req.options.option_list.insert(
+            0, dhcp.option(tag=3, value=self.bin_server))
+        req.options.option_list.insert(
+            0, dhcp.option(tag=6, value=self.bin_dns))
 
         ack_pkt = packet.Packet()
         ack_pkt.add_protocol(ethernet.ethernet(
@@ -102,11 +117,10 @@ class dhcp_handler:
         ack_pkt.add_protocol(
             ipv4.ipv4(dst=req_ipv4.dst, src=self.dhcp_server, proto=req_ipv4.proto))
         ack_pkt.add_protocol(udp.udp(src_port=67, dst_port=68))
-        print(req.yiaddr)
         ack_pkt.add_protocol(dhcp.dhcp(op=2, chaddr=req_eth.src,
                                        siaddr=self.dhcp_server,
                                        boot_file=req.boot_file,
-                                       yiaddr=req.yiaddr,
+                                       yiaddr=(self.networkMap.findInactiveHostByMac(req_eth.src).ip),
                                        xid=req.xid,
                                        options=req.options))
 
