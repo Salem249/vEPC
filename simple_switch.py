@@ -36,6 +36,21 @@ LOG = logging.getLogger(__name__)
 class SimpleSwitch(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_2.OFP_VERSION]
 
+    def add_flow(self, datapath, in_port, dst, src, out_port, actions):
+        LOG.debug("--- Add FLow matching based on IPAddress")
+        ofproto = datapath.ofproto
+
+        match = datapath.ofproto_parser.OFPMatch(
+            in_port=in_port,
+            ipv4_dst=dst, ipv4_src=src, eth_type = 0x0800)
+        instructions =[datapath.ofproto_parser.OFPInstructionActions(ofproto_v1_2.OFPIT_APPLY_ACTIONS, actions=actions)]
+
+        mod = datapath.ofproto_parser.OFPFlowMod(
+            datapath=datapath, match=match, cookie=0, cookie_mask=0,
+            command=ofproto.OFPFC_ADD, priority=3,idle_timeout=0, hard_timeout=0, out_port=out_port, flags=ofproto.OFPFF_SEND_FLOW_REM, instructions=instructions)
+        datapath.send_msg(mod)            
+
+
     def _execute_lldp(self, s):
         time.sleep(4)
         LOG.debug("--- Sending LLDP request")
@@ -66,7 +81,7 @@ class SimpleSwitch(app_manager.RyuApp):
         inst = [parser.OFPInstructionActions(type_=ofproto.OFPIT_APPLY_ACTIONS,
                                              actions=actions)]
         mod = parser.OFPFlowMod(datapath=datapath,
-                                priority=0,
+                                priority=1,
                                 match=parser.OFPMatch(),
                                 instructions=inst)
         datapath.send_msg(mod)
@@ -110,7 +125,7 @@ class SimpleSwitch(app_manager.RyuApp):
 
 
         dpid = datapath.id
-        self.mac_to_port.setdefault(dpid, {})
+        #self.mac_to_port.setdefault(dpid, {})
         p_icmp = self._find_protocol(pkt, "icmp")
         p_ipv4 = self._find_protocol(pkt, "ipv4")
 
@@ -119,9 +134,9 @@ class SimpleSwitch(app_manager.RyuApp):
         # The flow rules with test of icmp
         if p_ipv4 and p_icmp:
             LOG.debug("--- ICMP Packet!: \nIP Address src:%s\nIP Address Dest:%s\n", p_ipv4.src, p_ipv4.dst)
-            self.mac_to_port[dpid][eth.src] = in_port
-            if eth.dst in self.mac_to_port[dpid]:
-                out_port = self.mac_to_port[dpid][eth.dst]
+            #self.netMap.mac_to_port[dpid][eth.src] = in_port
+            if self.networkMap.findActiveHostByMac(eth.dst):
+                out_port = self.networkMap.findPortByHostMac(eth.dst).port_no
             else:
                 out_port = ofproto.OFPP_FLOOD
 
@@ -155,7 +170,7 @@ class SimpleSwitch(app_manager.RyuApp):
             
                 if self.networkMap.findActiveHostByIP(dst_ip):
                     LOG.debug("--- I can answer this. ")
-                    dst_mac = self.networkMap.findHostByIP(dst_ip).mac
+                    dst_mac = self.networkMap.findActiveHostByIP(dst_ip).mac
                     e = ethernet.ethernet(src_mac, dst_mac, ether.ETH_TYPE_ARP)
                     a = arp.arp(hwtype=1, proto=ether.ETH_TYPE_IP, hlen=6, plen=4,
                     opcode=arp.ARP_REPLY, src_mac=dst_mac, src_ip=dst_ip,
@@ -183,14 +198,15 @@ class SimpleSwitch(app_manager.RyuApp):
                     
                
             elif p_arp.opcode == arp.ARP_REPLY:
-                port = self.networkMap.findPortByHostMac(p_arp.dst_mac)
+                port = self.networkMap.findPortByHostMac(p_arp.dst_ip)
                 if port:
                     actions = [parser.OFPActionOutput(port.port_no)]
                     out = parser.OFPPacketOut(datapath=port.dpid,
                                         buffer_id=ofproto_v1_2.OFP_NO_BUFFER,
                                         actions=actions, in_port=ofproto_v1_2.OFPP_CONTROLLER,
                                         data=msg.data)
-                    switch.dp.send_msg(out)
+                    
+                    datapath.send_msg(out)
                 else:
                     LOG.debug("--- Flood Reply")
                     actions = [parser.OFPActionOutput(ofproto_v1_2.OFPP_FLOOD)]
