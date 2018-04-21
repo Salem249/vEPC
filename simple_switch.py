@@ -149,7 +149,7 @@ class SimpleSwitch(app_manager.RyuApp):
                 actions=actions, data=data)
             datapath.send_msg(out)
 
-        if self._find_protocol(pkt, "arp"):
+        elif self._find_protocol(pkt, "arp"):
             toSend = self.arph.handle(msg, self._send_packet)
         elif self._find_protocol(pkt, "lldp"):
             toSend = self.lldph.handle(msg, self._send_packet)
