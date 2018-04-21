@@ -72,14 +72,13 @@ class dhcp_handler:
         dhcp_state = self.get_state(pkt_dhcp)
         if dhcp_state == 'DHCPDISCOVER':
             known = self.networkMap.findActiveHostByMac(pkt.get_protocol(ethernet.ethernet).src)
-            print("-------------SELBSTCHECK")
             if known:
                 ip = known.ip
             else:
                 ip = self._getNextAddr()
-                print("-------------SELBSTCHECK UNKNOWN")
-            if ip: #only interesting when adressspace is empty
-                print("-------------SELBSTCHECK IP")
+
+            if ip:
+
                 self.networkMap.addInactiveHost(host.host(pkt.get_protocol(ethernet.ethernet).src, ip))
                 return self.assemble_offer(pkt,ip)
             else:
@@ -97,8 +96,6 @@ class dhcp_handler:
         req = pkt.get_protocol(dhcp.dhcp)
         if not (self.networkMap.findInactiveHostByMac(req_eth.src)):
             return
-        print("-----------------------FIND MAC %s", req_eth.src)
-        print("test %s", self.networkMap.findInactiveHostByMac(req_eth.src))
         req.options.option_list.remove(
             next(opt for opt in req.options.option_list if opt.tag == 53))
         req.options.option_list.insert(0, dhcp.option(tag=51, value='8640'))
@@ -123,7 +120,7 @@ class dhcp_handler:
                                        yiaddr=(self.networkMap.findInactiveHostByMac(req_eth.src).ip),
                                        xid=req.xid,
                                        options=req.options))
-
+        ack_pkt.serialize()
         return ack_pkt
 
     def assemble_offer(self, pkt,ip):
@@ -162,6 +159,7 @@ class dhcp_handler:
                                          yiaddr=ip,
                                          xid=disc.xid,
                                          options=disc.options))
+        offer_pkt.serialize()
         return offer_pkt
 
     def get_state(self, pkt_dhcp):
