@@ -125,7 +125,6 @@ class SimpleSwitch(app_manager.RyuApp):
 
 
         dpid = datapath.id
-        #self.mac_to_port.setdefault(dpid, {})
         p_icmp = self._find_protocol(pkt, "icmp")
         p_ipv4 = self._find_protocol(pkt, "ipv4")
 
@@ -134,9 +133,11 @@ class SimpleSwitch(app_manager.RyuApp):
         # The flow rules with test of icmp
         if p_ipv4 and p_icmp:
             LOG.debug("--- ICMP Packet!: \nIP Address src:%s\nIP Address Dest:%s\n", p_ipv4.src, p_ipv4.dst)
+
             #self.netMap.mac_to_port[dpid][eth.src] = in_port
             if self.networkMap.findActiveHostByMac(eth.dst):
                 out_port = self.networkMap.findPortByHostMac(eth.dst).port_no
+
             else:
                 out_port = ofproto.OFPP_FLOOD
 
