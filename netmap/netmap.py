@@ -60,9 +60,7 @@ class netmap:
         for thing in self.networkMap.neighbors(self.dDummy):
             if isinstance(thing, host.host):
                 if thing.mac == mac:
-                    print("Found")
                     return thing
-        print("Notfound")
         return None
 
     def deactivateHost(self, searchHost):
@@ -75,7 +73,7 @@ class netmap:
                             self.networkMap.add_edge(self.dDummy, searchHost)
 
     def activateHost(self, host, datapath, port_no):
-        for  switch in self.networkMap.neighbors("Control"):
+        for switch in self.networkMap.neighbors("Control"):
             if switch.dp == datapath:
                 for port in self.networkMap.neighbors(switch):
                     if port.port_no == port_no:
@@ -84,11 +82,16 @@ class netmap:
                             
         
     def findPortByPath(self, dp, port_no):
-        for  switch in self.networkMap.neighbors(self.cDummy):
+        for switch in self.networkMap.neighbors(self.cDummy):
             if(switch.dp.id == dp):
                 for port in self.networkMap.neighbors(switch):
                     if (port_no == port_no):
                         return port
+
+    def findDataPathById(self, dpid):
+        for switch in self.networkMap.neighbors(self.cDummy):
+            if(switch.dp.id == dpid):
+                return swich.dp
 
     def addSwitch(self, switch):
         self.networkMap.add_edge(self.cDummy, switch)
@@ -103,12 +106,9 @@ class netmap:
         
     
     def addInactiveHost(self, host):
-        print("---------------------START METHOD")
         self.deactivateHost(host)
-        print("-----------------------FIND MAC %s", host.mac)
         print(not self.findInactiveHostByMac(host.mac))
         if not self.findInactiveHostByMac(host.mac):
-            print("ADDING HOST ----------------")
             self.networkMap.add_edge(self.dDummy, host)
             self.report()
 
