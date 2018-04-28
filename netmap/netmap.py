@@ -1,5 +1,7 @@
 import networkx as nx
 import host
+from copy import deepcopy
+
 
 class netmap:
     
@@ -27,7 +29,7 @@ class netmap:
 
     def findHostByPort(self, port_no, datapath):
         for  switch in self.networkMap.neighbors(self.cDummy):
-            if(switch.dp.id == dp):
+            if(switch.dp == datapath):
                 for port in self.networkMap.neighbors(switch):
                     if port.port_no == port_no:
                         for thing in self.networkMap.neighbors(port):
@@ -68,11 +70,13 @@ class netmap:
     def deactivateHost(self, searchHost):
         for  switch in self.networkMap.neighbors("Control"):
             for port in self.networkMap.neighbors(switch):
+                #copyOf_networkMap = deepcopy(self.networkMap.neighbors)
                 for thing in self.networkMap.neighbors(port):
                     if isinstance(thing, host.host):
                         if thing == searchHost:
-                            self.networkMap.remove_edge(host,thing)
+                            self.networkMap.remove_edge(port, thing)
                             self.networkMap.add_edge(self.dDummy, searchHost)
+                            return
 
     def activateHost(self, host, datapath, port_no):
         for  switch in self.networkMap.neighbors("Control"):
