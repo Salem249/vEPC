@@ -50,6 +50,16 @@ class SimpleSwitch(app_manager.RyuApp):
         datapath.send_msg(mod)
 
 
+    def del_flow(self, datapath, match, out_port, out_group):
+        LOG.debug("--- delete FLow matching based on IPAddress")
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        mod = parser.OFPFlowMod(
+            datapath=datapath, match=match, cookie=0,
+            command=ofproto.OFPFC_DELETE, out_port=out_port, out_group=out_group)
+        datapath.send_msg(mod)
+
+
     def _execute_lldp(self, s):
         time.sleep(4)
         LOG.debug("--- Sending LLDP request")
@@ -90,6 +100,7 @@ class SimpleSwitch(app_manager.RyuApp):
     def __init__(self, *args, **kwargs):
         super(SimpleSwitch, self).__init__(*args, **kwargs)
 
+        self.mac_to_port = {}
         #Instance of the NetworkMap
         self.networkMap = netmap.netmap()
         
@@ -124,7 +135,7 @@ class SimpleSwitch(app_manager.RyuApp):
 
 
         dpid = datapath.id
-        #self.mac_to_port.setdefault(dpid, {})
+        self.mac_to_port.setdefault(dpid, {})
         p_icmp = self._find_protocol(pkt, "icmp")
         p_ipv4 = self._find_protocol(pkt, "ipv4")
         pkt_tcp = self._find_protocol(pkt,"tcp")
@@ -209,8 +220,13 @@ class SimpleSwitch(app_manager.RyuApp):
         if p_ipv4 and p_icmp:
             LOG.debug("--- ICMP Packet!: \nIP Address src:%s\nIP Address Dest:%s\n", p_ipv4.src, p_ipv4.dst)
             #self.netMap.mac_to_port[dpid][eth.src] = in_port
-            if self.networkMap.findActiveHostByMac(eth.dst):
-                out_port = self.networkMap.findPortByHostMac(eth.dst).port_no
+            # if self.networkMap.findActiveHostByMac(eth.dst):
+            #     out_port = self.networkMap.findPortByHostMac(eth.dst).port_no
+            # else:
+            #     out_port = ofproto.OFPP_FLOOD
+            self.mac_to_port[dpid][eth.src] = in_port
+            if eth.dst in self.mac_to_port[dpid]:
+                out_port = self.mac_to_port[dpid][eth.dst]
             else:
                 out_port = ofproto.OFPP_FLOOD
 
@@ -335,3 +351,30 @@ class SimpleSwitch(app_manager.RyuApp):
                                   data=data)
         datapath.send_msg(out)
         
+
+    @set_ev_cls(ofp_event.EventOFPPortStatus, MAIN_DISPATCHER)
+    def _port_status_handler(self, ev):
+        msg = ev.msg
+        datapath = msg.datapath
+        dpid = datapath.id
+        ofproto = datapath.ofproto
+        reason = msg.reason
+        port_no = msg.desc.port_no
+        parser = datapath.ofproto_parser
+
+
+        self.logger.info("slave state changed port: %d enabled: %s",)
+
+        if reason == ofproto.OFPPR_ADD:
+            self.logger.info("port added %s", port_no)
+        elif reason == ofproto.OFPPR_DELETE:
+            ip = self.networkMap.findHostByPort(port_no, dpid).ip
+            self.logger.info("port deleted %s", port_no)
+            match = parser.OFPMatch(ipv4_src=ip, eth_type=0x0800)
+            self.del_flow(datapath, match, out_port=ofproto.OFPP_ANY, out_group=ofproto.OFPG_ANY)
+            match = parser.OFPMatch(ipv4_dst=ip, eth_type = 0x0800)
+            self.del_flow(datapath, match, out_port=ofproto.OFPP_ANY, out_group=ofproto.OFPG_ANY)
+        elif reason == ofproto.OFPPR_MODIFY:
+            self.logger.info("port modified %s", port_no)
+        else:
+            self.logger.info("Illeagal port state %s %s", port_no, reason)
