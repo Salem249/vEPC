@@ -2,11 +2,10 @@ import networkx.algorithms as nx
 # Python Standard
 import logging
 import array
-import netaddr
 import thread
-import time
 import struct
 import host
+
 
 #Ryu
 from ryu.base import app_manager
@@ -21,15 +20,15 @@ from ryu.lib.mac import haddr_to_bin
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
 from ryu.lib.packet import ether_types
-from ryu.lib.packet import arp
 from ryu.lib.packet import lldp
 from ryu.lib.packet import dhcp
 from ryu.lib.packet import ipv4
 from ryu.lib.packet import udp
-from ryu.topology.switches import LLDPPacket
-from ryu.ofproto import inet
+
 
 from protocol_handler import dhcp_handler
+from protocol_handler import lldp_handler
+from protocol_handler import arp_handler
 from netmap import netmap
 
 
@@ -100,17 +99,17 @@ class SimpleSwitch(app_manager.RyuApp):
     
     def __init__(self, *args, **kwargs):
         super(SimpleSwitch, self).__init__(*args, **kwargs)
-
-        self.mac_to_port = {}
         #Instance of the NetworkMap
         self.networkMap = netmap.netmap()
-        
         #Instance of DHCP Handler
-        self.dhcp_h = dhcp_handler.dhcp_handler(self.networkMap)
-
+        self.dhcph = dhcp_handler.dhcp_handler(self.networkMap)
+        #Instance of Arp Handler
+        self.arph = arp_handler.arp_handler(self.networkMap)
+        #Instance of LLDP Handler
+        self.lldph = lldp_handler.lldp_handler(self.networkMap)
         #LLDP Deamon
         try:
-            thread.start_new_thread(self._execute_lldp, (4,))
+            thread.start_new_thread(self.lldph._execute_lldp, (4,self._send_data))
         except:
             LOG.debug("--- LLDP Doesn't start")
 
@@ -128,15 +127,9 @@ class SimpleSwitch(app_manager.RyuApp):
         parser = datapath.ofproto_parser
         ofproto = datapath.ofproto
         in_port = msg.match['in_port']
-        
         pkt = packet.Packet(data=msg.data)
-
         eth = pkt.get_protocol(ethernet.ethernet)
-
-
-
         dpid = datapath.id
-        self.mac_to_port.setdefault(dpid, {})
         p_icmp = self._find_protocol(pkt, "icmp")
         p_ipv4 = self._find_protocol(pkt, "ipv4")
         pkt_tcp = self._find_protocol(pkt,"tcp")
@@ -252,88 +245,20 @@ class SimpleSwitch(app_manager.RyuApp):
                 actions=actions, data=data)
             datapath.send_msg(out)
 
-        if self._find_protocol(pkt, "arp"):
-            p_arp = self._find_protocol(pkt, "arp")
-            LOG.debug("ARP %s", p_arp.opcode)
-            if p_arp.opcode == arp.ARP_REQUEST:
-                src_ip = str(netaddr.IPAddress(p_arp.src_ip))
-                dst_ip = str(netaddr.IPAddress(p_arp.dst_ip))
-                src_mac = str(p_arp.src_mac)
-                dst_mac = str(p_arp.dst_mac)
-                LOG.debug("--- ARP REQUEST found!: %s->%s\nMAC-Address src:%s\nMacAddress Dest:%s\n", src_ip, dst_ip, src_mac, dst_mac)
-                #try to add src mac to network
-                
-                if not self.networkMap.findActiveHostByIP(src_ip):
-                    self.networkMap.addActiveHost(datapath, msg.match['in_port'], host.host(src_mac,src_ip))
-            
-                if self.networkMap.findActiveHostByIP(dst_ip):
-                    LOG.debug("--- I can answer this. ")
-                    dst_mac = self.networkMap.findActiveHostByIP(dst_ip).mac
-                    e = ethernet.ethernet(src_mac, dst_mac, ether.ETH_TYPE_ARP)
-                    a = arp.arp(hwtype=1, proto=ether.ETH_TYPE_IP, hlen=6, plen=4,
-                    opcode=arp.ARP_REPLY, src_mac=dst_mac, src_ip=dst_ip,
-                    dst_mac=src_mac, dst_ip=src_ip)
-                    p = packet.Packet()
-                    p.add_protocol(e)
-                    p.add_protocol(a) 
-                    p.serialize()
-                    actions = [parser.OFPActionOutput(msg.match['in_port'])]
-                    out = parser.OFPPacketOut(datapath=datapath,
-                                        buffer_id=ofproto_v1_2.OFP_NO_BUFFER,
-                                        actions=actions, in_port=ofproto_v1_2.OFPP_CONTROLLER,
-                                        data=p)
-                    datapath.send_msg(out)
-                    
-                else:
-                    LOG.debug("--- Flood now")
-                    actions = [parser.OFPActionOutput(ofproto_v1_2.OFPP_FLOOD)]
-                    out = parser.OFPPacketOut(datapath=datapath,
-                                      buffer_id=ofproto.OFP_NO_BUFFER,
-                                      in_port=in_port, actions=actions,
-                                      data=msg.data)
-                    datapath.send_msg(out)
-
-                    
-               
-            elif p_arp.opcode == arp.ARP_REPLY:
-                if not self.networkMap.findActiveHostByIP(p_arp.src_ip):
-                    self.networkMap.addActiveHost(datapath, msg.match['in_port'], host.host(p_arp.src_mac,p_arp.src_ip))
-                port = self.networkMap.findPortByHostMac(p_arp.dst_ip)
-                if port:
-                    actions = [parser.OFPActionOutput(port.port_no)]
-                    out = parser.OFPPacketOut(datapath=port.dpid,
-                                        buffer_id=ofproto_v1_2.OFP_NO_BUFFER,
-                                        actions=actions, in_port=ofproto_v1_2.OFPP_CONTROLLER,
-                                        data=msg.data)
-                    
-                    datapath.send_msg(out)
-                else:
-                    LOG.debug("--- Flood Reply")
-                    actions = [parser.OFPActionOutput(ofproto_v1_2.OFPP_FLOOD)]
-                    out = parser.OFPPacketOut(datapath=datapath,
-                                      buffer_id=ofproto.OFP_NO_BUFFER,
-                                      in_port=in_port, actions=actions,
-                                      data=msg.data)
-                    datapath.send_msg(out)
+        elif self._find_protocol(pkt, "arp"):
+            toSend = self.arph.handle(msg, self._send_packet)
         elif self._find_protocol(pkt, "lldp"):
-            #LOG.debug("---LLDP Packet found")
-            p_eth = self._find_protocol(pkt, "ethernet")
-            #LOG.debug("from %s to %s", p_eth.src, datapath.id)
-            if (self.networkMap.findPortbyPortMac(p_eth.src) and self.networkMap.findPortByPath(datapath.id, msg.match['in_port'])):
-                #LOG.debug("AkA %s", self._findPortByPath(datapath.id, msg.match['in_port']))
-                self.networkMap.networkMap.add_edge(self.networkMap.findPortbyPortMac(p_eth.src), self.networkMap.findPortByPath(datapath.id, msg.match['in_port']))
-            else:
-                LOG.debug("%s konnte nicht gefunden werden", datapath.id)
+            toSend = self.lldph.handle(msg, self._send_packet)
         elif pkt.get_protocols(dhcp.dhcp):
-            toSend = self.dhcp_h._handle_dhcp(pkt)
-            if toSend:
-                self._send_packet(datapath, in_port, toSend)
-            
+            toSend = self.dhcph._handle_dhcp(pkt)
         else:
             LOG.debug(" --- No Supported Protocol")
             for p in pkt.protocols:
                 if hasattr(p, 'protocol_name'):
                     LOG.debug(p.protocol_name)
+        if toSend:
+                actions = [parser.OFPActionOutput(port=in_port)]
+                self._send_packet(datapath, actions, toSend, ofproto.OFPP_CONTROLLER)
             
 
     @set_ev_cls(event.EventSwitchEnter)
@@ -343,17 +268,25 @@ class SimpleSwitch(app_manager.RyuApp):
             self.networkMap.addSwitch(switch)
 
 
-    def _send_packet(self, datapath, port, pkt):
-        print("Sending packet back")
+    def _send_packet(self, datapath, actions, pkt, in_port):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
+        #self.logger.info("packet-out %s" % (pkt,))
         pkt.serialize()
-        self.logger.info("packet-out %s" % (pkt,))
         data = pkt.data
-        actions = [parser.OFPActionOutput(port=port)]
         out = parser.OFPPacketOut(datapath=datapath,
                                   buffer_id=ofproto.OFP_NO_BUFFER,
-                                  in_port=ofproto.OFPP_CONTROLLER,
+                                  in_port=in_port,
+                                  actions=actions,
+                                  data=data)
+        datapath.send_msg(out)
+
+    def _send_data(self, datapath, actions, data, in_port):
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        out = parser.OFPPacketOut(datapath=datapath,
+                                  buffer_id=ofproto.OFP_NO_BUFFER,
+                                  in_port=in_port,
                                   actions=actions,
                                   data=data)
         datapath.send_msg(out)
