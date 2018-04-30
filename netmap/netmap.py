@@ -1,5 +1,7 @@
 import networkx as nx
 import host
+from copy import deepcopy
+
 
 class netmap:
     
@@ -25,9 +27,22 @@ class netmap:
                         if thing.mac == mac:
                             return port
 
+    def findSwitchByHostMac(self,mac):
+        for  switch in self.networkMap.neighbors(self.cDummy):
+            for port in self.networkMap.neighbors(switch):
+                for thing in self.networkMap.neighbors(port):
+                    if isinstance(thing, host.host):
+                        if thing.mac == mac:
+                            return switch
+
+    def findSwitchByDatapath(self,dp):
+        for  switch in self.networkMap.neighbors(self.cDummy):
+            if switch.dp == dp:
+                return switch
+
     def findHostByPort(self, port_no, datapath):
         for  switch in self.networkMap.neighbors(self.cDummy):
-            if(switch.dp.id == dp):
+            if(switch.dp == datapath):
                 for port in self.networkMap.neighbors(switch):
                     if port.port_no == port_no:
                         for thing in self.networkMap.neighbors(port):
@@ -47,6 +62,7 @@ class netmap:
             for port in self.networkMap.neighbors(switch):
                 for thing in self.networkMap.neighbors(port):
                     if isinstance(thing, host.host):
+                        
                         if thing.mac == mac:
                             return thing
 
@@ -59,6 +75,7 @@ class netmap:
     def findInactiveHostByMac(self, mac):
         for thing in self.networkMap.neighbors(self.dDummy):
             if isinstance(thing, host.host):
+                print("current: ",thing.mac, " Target: ",mac)
                 if thing.mac == mac:
                     return thing
         return None
@@ -66,11 +83,13 @@ class netmap:
     def deactivateHost(self, searchHost):
         for  switch in self.networkMap.neighbors("Control"):
             for port in self.networkMap.neighbors(switch):
+                #copyOf_networkMap = deepcopy(self.networkMap.neighbors)
                 for thing in self.networkMap.neighbors(port):
                     if isinstance(thing, host.host):
                         if thing == searchHost:
-                            self.networkMap.remove_edge(host,thing)
+                            self.networkMap.remove_edge(port, thing)
                             self.networkMap.add_edge(self.dDummy, searchHost)
+                            return
 
     def activateHost(self, host, datapath, port_no):
         for switch in self.networkMap.neighbors("Control"):
