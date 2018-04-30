@@ -1,3 +1,4 @@
+import networkx.algorithms as nx
 # Python Standard
 import logging
 import array
@@ -206,12 +207,19 @@ class SimpleSwitch(app_manager.RyuApp):
 
 
         # The flow rules with test of icmp
+        print("---- Way to go ",nx.shortest_path(self.networkMap.networkMap,self.networkMap.findSwitchByDatapath(datapath),self.networkMap.findSwitchByHostMac(eth.dst)))
+
         if p_ipv4 and p_icmp:
             LOG.debug("--- ICMP Packet!: \nIP Address src:%s\nIP Address Dest:%s\n", p_ipv4.src, p_ipv4.dst)
             #self.netMap.mac_to_port[dpid][eth.src] = in_port
             if self.networkMap.findActiveHostByMac(eth.dst):
+                LOG.debug("This adress has been found!")
+                if self.networkMap.isInactiveHost(eth.src):
+                    LOG.debug("Activate Host...")
+                    self.netMap.addActiveHost(datapath, msg.match['in_port'], host.host(eth.src,p_ipv4.src))
                 out_port = self.networkMap.findPortByHostMac(eth.dst).port_no
             else:
+                LOG.debug("This adress has not been found!")
                 out_port = ofproto.OFPP_FLOOD
 
             actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
@@ -275,6 +283,8 @@ class SimpleSwitch(app_manager.RyuApp):
                     
                
             elif p_arp.opcode == arp.ARP_REPLY:
+                if not self.networkMap.findActiveHostByIP(p_arp.src_ip):
+                    self.networkMap.addActiveHost(datapath, msg.match['in_port'], host.host(p_arp.src_mac,p_arp.src_ip))
                 port = self.networkMap.findPortByHostMac(p_arp.dst_ip)
                 if port:
                     actions = [parser.OFPActionOutput(port.port_no)]

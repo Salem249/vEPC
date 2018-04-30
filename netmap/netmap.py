@@ -25,6 +25,19 @@ class netmap:
                         if thing.mac == mac:
                             return port
 
+    def findSwitchByHostMac(self,mac):
+        for  switch in self.networkMap.neighbors(self.cDummy):
+            for port in self.networkMap.neighbors(switch):
+                for thing in self.networkMap.neighbors(port):
+                    if isinstance(thing, host.host):
+                        if thing.mac == mac:
+                            return switch
+
+    def findSwitchByDatapath(self,dp):
+        for  switch in self.networkMap.neighbors(self.cDummy):
+            if switch.dp == dp:
+                return switch
+
     def findHostByPort(self, port_no, datapath):
         for  switch in self.networkMap.neighbors(self.cDummy):
             if(switch.dp.id == dp):
@@ -47,6 +60,7 @@ class netmap:
             for port in self.networkMap.neighbors(switch):
                 for thing in self.networkMap.neighbors(port):
                     if isinstance(thing, host.host):
+                        
                         if thing.mac == mac:
                             return thing
 
@@ -59,6 +73,7 @@ class netmap:
     def findInactiveHostByMac(self, mac):
         for thing in self.networkMap.neighbors(self.dDummy):
             if isinstance(thing, host.host):
+                print("current: ",thing.mac, " Target: ",mac)
                 if thing.mac == mac:
                     print("Found")
                     return thing
