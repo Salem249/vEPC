@@ -58,26 +58,6 @@ class SimpleSwitch(app_manager.RyuApp):
             command=ofproto.OFPFC_DELETE, out_port=out_port, out_group=out_group)
         datapath.send_msg(mod)
 
-
-    def _execute_lldp(self, s):
-        time.sleep(4)
-        LOG.debug("--- Sending LLDP request")
-        for  switch in self.networkMap.networkMap.neighbors("Control"):
-            parser = switch.dp.ofproto_parser
-            ofproto = switch.dp.ofproto
-            for port in self.networkMap.networkMap.neighbors(switch):
-                data = LLDPPacket.lldp_packet(switch.dp.id, 1, port.hw_addr, 1)
-                actions = [parser.OFPActionOutput(port.port_no)]
-                
-                out = parser.OFPPacketOut(datapath=switch.dp,
-                                    buffer_id=ofproto_v1_2.OFP_NO_BUFFER,
-                                    actions=actions, in_port=ofproto_v1_2.OFPP_CONTROLLER,
-                                    data=data)
-                switch.dp.send_msg(out)
-        
-        self.networkMap.report()
-        self._execute_lldp(s)
-
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def _switch_features_handler(self, ev):
         msg = ev.msg
@@ -108,7 +88,7 @@ class SimpleSwitch(app_manager.RyuApp):
         self.lldph = lldp_handler.lldp_handler(self.networkMap)
         #LLDP Deamon
         try:
-            thread.start_new_thread(self.lldph._execute_lldp, (4,self._send_data))
+            thread.start_new_thread(self.lldph._execute_lldp, (10,self._send_data))
         except:
             LOG.debug("--- LLDP Doesn't start")
 
@@ -210,7 +190,7 @@ class SimpleSwitch(app_manager.RyuApp):
 
 
         # The flow rules with test of icmp
-        #print("---- Way to go ",nx.shortest_path(self.networkMap.networkMap,self.networkMap.findSwitchByDatapath(datapath),self.networkMap.findSwitchByHostMac(eth.dst)))
+        
 
         if p_ipv4 and p_icmp:
             LOG.debug("--- ICMP Packet!: \nIP Address src:%s\nIP Address Dest:%s\n", p_ipv4.src, p_ipv4.dst)
@@ -219,7 +199,7 @@ class SimpleSwitch(app_manager.RyuApp):
                 LOG.debug("This adress has been found!")
                 if self.networkMap.isInactiveHost(eth.src):
                     LOG.debug("Activate Host...")
-                    self.netMap.addActiveHost(datapath, msg.match['in_port'], host.host(eth.src,p_ipv4.src))
+                    self.networkMap.addActiveHost(datapath, msg.match['in_port'], host.host(eth.src,p_ipv4.src))
                 out_port = self.networkMap.findPortByHostMac(eth.dst).port_no
             else:
                  out_port = ofproto.OFPP_FLOOD
@@ -232,7 +212,7 @@ class SimpleSwitch(app_manager.RyuApp):
 
 
                     LOG.debug("###More than one Switch detected###")
-                    LOG.debug("")
+                    print("---- Way to go ",nx.shortest_path(self.networkMap.networkMap,self.networkMap.findSwitchByDatapath(datapath),self.networkMap.findSwitchByHostMac(eth.dst)))
                     LOG.debug("###TO BE IMPLEMENTED###")
                 else:
                     match = datapath.ofproto_parser.OFPMatch(

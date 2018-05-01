@@ -55,7 +55,7 @@ class netmap:
             if isinstance(thing, Port) and thing.dpid == datapath.id:
                 for obj in self.networkMap.neighbors(thing):
                             if isinstance(obj, host):
-                                return host
+                                return obj
 
     def findActiveHostByIP(self, ip):
         for  thing in self.networkMap.nodes:
@@ -91,7 +91,7 @@ class netmap:
             if isinstance(thing, host) and thing == searchHost:
                 for port in self.networkMap.neighbors(thing):
                     if isinstance(port, Port):
-                        self.networkMap.remove_edge(port, thing)
+                        self.networkMap.remove_node(thing)
                         self.networkMap.add_edge(self.dDummy, thing)
                         return
 
