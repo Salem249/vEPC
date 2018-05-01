@@ -23,6 +23,8 @@ from ryu.lib.packet import ether_types
 from ryu.lib.packet import ipv4
 from ryu.lib.packet import udp
 from ryu.lib.packet import dhcp
+from ryu.topology.switches import Switch
+from ryu.topology.switches import Port
 
 
 from protocol_handler import dhcp_handler
@@ -212,7 +214,17 @@ class SimpleSwitch(app_manager.RyuApp):
 
 
                     LOG.debug("###More than one Switch detected###")
-                    print("---- Way to go ",nx.shortest_path(self.networkMap.networkMap,self.networkMap.findSwitchByDatapath(datapath),self.networkMap.findSwitchByHostMac(eth.dst)))
+                    path = nx.shortest_path(self.networkMap.networkMap,self.networkMap.findSwitchByDatapath(datapath),self.networkMap.findSwitchByHostMac(eth.dst))
+                    print("---- Way to go ", str(path))
+                    for item in range(1,(len(path)-1)):
+                        if isinstance(path[item], Port) and isinstance(path[item-1], Switch):
+                            datapath = path[item-1].dp
+                            port_no = path[item].port_no
+                            match = datapath.ofproto_parser.OFPMatch(in_port=in_port, ipv4_dst=p_ipv4.dst, ipv4_src=p_ipv4.src, eth_type = 0x0800)
+                            self.add_flow(datapath, port_no, actions, match)
+                        else:
+                            LOG.debug("---- Error in establishing multiflow.")
+                            
                     LOG.debug("###TO BE IMPLEMENTED###")
                 else:
                     match = datapath.ofproto_parser.OFPMatch(
