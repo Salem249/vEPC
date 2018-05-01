@@ -33,7 +33,7 @@ class lldp_handler:
         for switch in self.networkMap.networkMap.neighbors("Control"):
             parser = switch.dp.ofproto_parser
             ofproto = switch.dp.ofproto
-            for port in self.networkMap.networkMap.neighbors(switch):
+            for port in self.networkMap.getAllSwitchPorts(switch):
                 pkt = LLDPPacket.lldp_packet(switch.dp.id, 1, port.hw_addr, 1)
                 actions = [parser.OFPActionOutput(port=port.port_no)]
                 callback(switch.dp, actions, pkt, ofproto.OFPP_CONTROLLER)
