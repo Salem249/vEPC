@@ -23,6 +23,7 @@ from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.lib import addrconv
 from ryu.topology import event
+from ryu.lib.packet import packet
 from ryu.lib.packet import dhcp
 from ryu.lib.packet import ethernet
 from ryu.lib.packet import ipv4
@@ -66,8 +67,10 @@ class dhcp_handler:
             return None
         return self.ip_current
 
-    def _handle_dhcp(self, pkt):
-
+    def _handle_dhcp(self, msg, callback):
+        pkt = packet.Packet(data=msg.data)
+        parser = msg.datapath.ofproto_parser
+        ofproto = msg.datapath.ofproto
         pkt_dhcp = pkt.get_protocols(dhcp.dhcp)[0]
         dhcp_state = self.get_state(pkt_dhcp)
         if dhcp_state == 'DHCPDISCOVER':
@@ -78,13 +81,18 @@ class dhcp_handler:
                 ip = self._getNextAddr()
 
             if ip:
-
-                self.networkMap.addInactiveHost(host.host(pkt.get_protocol(ethernet.ethernet).src, ip))
-                return self.assemble_offer(pkt,ip)
+                ans = self.assemble_offer(pkt,ip)
+                if ans:
+                    self.networkMap.addInactiveHost(host.host(pkt.get_protocol(ethernet.ethernet).src, ip))
+                    actions = [parser.OFPActionOutput(port=msg.match['in_port'])]
+                    callback(msg.datapath, actions, ans, ofproto.OFPP_CONTROLLER)
             else:
                 return None
         elif dhcp_state == 'DHCPREQUEST':
-            return self.assemble_ack(pkt)
+            ans = self.assemble_ack(pkt)
+            if ans:
+                actions = [parser.OFPActionOutput(port=msg.match['in_port'])]
+                callback(msg.datapath, actions, ans, ofproto.OFPP_CONTROLLER)
         else:
             return None
 

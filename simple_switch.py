@@ -20,10 +20,9 @@ from ryu.lib.mac import haddr_to_bin
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
 from ryu.lib.packet import ether_types
-from ryu.lib.packet import lldp
-from ryu.lib.packet import dhcp
 from ryu.lib.packet import ipv4
 from ryu.lib.packet import udp
+from ryu.lib.packet import dhcp
 
 
 from protocol_handler import dhcp_handler
@@ -211,7 +210,7 @@ class SimpleSwitch(app_manager.RyuApp):
 
 
         # The flow rules with test of icmp
-        print("---- Way to go ",nx.shortest_path(self.networkMap.networkMap,self.networkMap.findSwitchByDatapath(datapath),self.networkMap.findSwitchByHostMac(eth.dst)))
+        #print("---- Way to go ",nx.shortest_path(self.networkMap.networkMap,self.networkMap.findSwitchByDatapath(datapath),self.networkMap.findSwitchByHostMac(eth.dst)))
 
         if p_ipv4 and p_icmp:
             LOG.debug("--- ICMP Packet!: \nIP Address src:%s\nIP Address Dest:%s\n", p_ipv4.src, p_ipv4.dst)
@@ -222,11 +221,8 @@ class SimpleSwitch(app_manager.RyuApp):
                     LOG.debug("Activate Host...")
                     self.netMap.addActiveHost(datapath, msg.match['in_port'], host.host(eth.src,p_ipv4.src))
                 out_port = self.networkMap.findPortByHostMac(eth.dst).port_no
-             if self.networkMap.findActiveHostByMac(eth.dst):
-                 out_port = self.networkMap.findPortByHostMac(eth.dst).port_no
-             else:
+            else:
                  out_port = ofproto.OFPP_FLOOD
-            self.mac_to_port[dpid][eth.src] = in_port
 
             actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
 
@@ -246,20 +242,16 @@ class SimpleSwitch(app_manager.RyuApp):
             datapath.send_msg(out)
 
         elif self._find_protocol(pkt, "arp"):
-            toSend = self.arph.handle(msg, self._send_packet)
+            self.arph.handle(msg, self._send_packet)
         elif self._find_protocol(pkt, "lldp"):
-            toSend = self.lldph.handle(msg, self._send_packet)
+            self.lldph.handle(msg, self._send_packet)
         elif pkt.get_protocols(dhcp.dhcp):
-            toSend = self.dhcph._handle_dhcp(pkt)
+            self.dhcph._handle_dhcp(msg, self._send_packet)
         else:
             LOG.debug(" --- No Supported Protocol")
             for p in pkt.protocols:
                 if hasattr(p, 'protocol_name'):
                     LOG.debug(p.protocol_name)
-        if toSend:
-                actions = [parser.OFPActionOutput(port=in_port)]
-                self._send_packet(datapath, actions, toSend, ofproto.OFPP_CONTROLLER)
-            
 
     @set_ev_cls(event.EventSwitchEnter)
     def get_topology_data(self, ev):

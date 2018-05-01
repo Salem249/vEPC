@@ -24,6 +24,7 @@ class arp_handler:
         datapath = msg.datapath
         parser = datapath.ofproto_parser
         ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
         
         if p_arp.opcode == arp.ARP_REQUEST:
             src_ip = str(netaddr.IPAddress(p_arp.src_ip))
@@ -57,6 +58,8 @@ class arp_handler:
                     #datapath.send_msg(out)
 
         elif p_arp.opcode == arp.ARP_REPLY:
+            if not self.networkMap.findActiveHostByIP(p_arp.src_ip):
+                self.networkMap.addActiveHost(msg.datapath, msg.match['in_port'],host.host(p_arp.src_mac,p_arp.src_ip))
             port = self.networkMap.findPortByHostMac(p_arp.dst_mac)
             if port:
                 actions = [parser.OFPActionOutput(port=port.port_no)]
