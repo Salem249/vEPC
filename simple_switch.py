@@ -228,11 +228,19 @@ class SimpleSwitch(app_manager.RyuApp):
 
             # install a flow to avoid packet_in next time
             if out_port != ofproto.OFPP_FLOOD:
-            	match = datapath.ofproto_parser.OFPMatch(
-            		in_port=in_port, ipv4_dst=p_ipv4.dst, ipv4_src=p_ipv4.src, eth_type = 0x0800)
+                if (self.networkMap.findSwitchByDatapath(datapath) != self.networkMap.findSwitchByHostMac(eth.dst)):
 
-                self.add_flow(datapath, out_port, actions, match)
+
+                    LOG.debug("###More than one Switch detected###")
+                    LOG.debug("")
+                    LOG.debug("###TO BE IMPLEMENTED###")
+                else:
+                    match = datapath.ofproto_parser.OFPMatch(
+            	    in_port=in_port, ipv4_dst=p_ipv4.dst, ipv4_src=p_ipv4.src, eth_type = 0x0800)
+                    self.add_flow(datapath, out_port, actions, match)
+
             data = None
+
             if msg.buffer_id == ofproto.OFP_NO_BUFFER:
                 data = msg.data
 

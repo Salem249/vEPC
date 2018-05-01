@@ -30,7 +30,7 @@ class lldp_handler:
 
     def _execute_lldp(self, s, callback):
         time.sleep(s)
-        for switch in self.networkMap.networkMap.neighbors("Control"):
+        for switch in self.networkMap.getAllSwitches():
             parser = switch.dp.ofproto_parser
             ofproto = switch.dp.ofproto
             for port in self.networkMap.getAllSwitchPorts(switch):
