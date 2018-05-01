@@ -51,7 +51,7 @@ class netmap:
         for  thing in self.networkMap.nodes:
             if isinstance(thing, Port) and thing.dpid == datapath.id:
                 for host in self.networkMap.neighbors(thing):
-                            if isinstance(thing, host.host):
+                            if isinstance(host, host.host):
                                 return host
 
     def findActiveHostByIP(self, ip):
@@ -133,12 +133,13 @@ class netmap:
 
     def report(self):
         for switch in self.networkMap.neighbors(self.cDummy):
-            print("--- Switch ", switch)
+            print("--- Switch ", str(switch))
             for port in self.networkMap.neighbors(switch):
                 if isinstance(port, Port):
                      print("--- Port ", port.port_no,"with addr ", port.hw_addr)
                      for p in self.networkMap.neighbors(port):
-                         print("--- Connected to ", str(p))
+                         if not isinstance(p, Switch):
+                             print("--- Connected to ", str(p))
         print("--- INACTIVE:---")
         for host in self.networkMap.neighbors(self.dDummy):
             print ("--- MAC ",host.mac, " IP ", host.ip, "----")

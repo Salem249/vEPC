@@ -38,5 +38,5 @@ class lldp_handler:
                 actions = [parser.OFPActionOutput(port=port.port_no)]
                 callback(switch.dp, actions, pkt, ofproto.OFPP_CONTROLLER)
                 #actions = [parser.OFPActionOutput(port.port_no)]
-        
         self.networkMap.report()
+        self._execute_lldp(s, callback)
