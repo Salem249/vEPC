@@ -207,7 +207,7 @@ class SimpleSwitch(app_manager.RyuApp):
                  out_port = ofproto.OFPP_FLOOD
 
             actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
-
+            LOG.debug("out_port to the destination host is ", out_port)
             # install a flow to avoid packet_in next time
             if out_port != ofproto.OFPP_FLOOD:
                 if (self.networkMap.findSwitchByDatapath(datapath) != self.networkMap.findSwitchByHostMac(eth.dst)):
@@ -221,6 +221,8 @@ class SimpleSwitch(app_manager.RyuApp):
                             datapath = path[item-1].dp
                             port_no = path[item].port_no
                             match = datapath.ofproto_parser.OFPMatch(in_port=in_port, ipv4_dst=p_ipv4.dst, ipv4_src=p_ipv4.src, eth_type = 0x0800)
+                            actions = [datapath.ofproto_parser.OFPActionOutput(port_no)]
+                            LOG.debug("out_port to the next hope is", port_no)
                             self.add_flow(datapath, port_no, actions, match)
                         else:
                             LOG.debug("---- Error in establishing multiflow.")
