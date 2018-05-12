@@ -207,7 +207,7 @@ class SimpleSwitch(app_manager.RyuApp):
                  out_port = ofproto.OFPP_FLOOD
 
             actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
-            LOG.debug("out_port to the destination host is ", out_port)
+            #LOG.debug("out_port to the destination host is ", out_port)
             # install a flow to avoid packet_in next time
             if out_port != ofproto.OFPP_FLOOD:
                 if (self.networkMap.findSwitchByDatapath(datapath) != self.networkMap.findSwitchByHostMac(eth.dst)):
@@ -222,7 +222,7 @@ class SimpleSwitch(app_manager.RyuApp):
                             port_no = path[item].port_no
                             match = datapath.ofproto_parser.OFPMatch(in_port=in_port, ipv4_dst=p_ipv4.dst, ipv4_src=p_ipv4.src, eth_type = 0x0800)
                             actions = [datapath.ofproto_parser.OFPActionOutput(port_no)]
-                            LOG.debug("out_port to the next hope is", port_no)
+                            #LOG.debug("out_port to the next hope is", str(port_no))
                             self.add_flow(datapath, port_no, actions, match)
                         else:
                             LOG.debug("---- Error in establishing multiflow.")
@@ -301,26 +301,31 @@ class SimpleSwitch(app_manager.RyuApp):
 
         if reason == ofproto.OFPPR_ADD:
             self.logger.info("port added %s", port_no)
-            #host_ip = self.networkMap.findHostByPort(port_no, datapath).ip
-            #host_mac = self.networkMap.findHostByPort(port_no, datapath).mac
-            #if not self.networkMap.findActiveHostByIP(src_ip):
-            #	print "addaddaddaddaddaddaddaddadd"
-            #	self.networkMap.addActiveHost(datapath, port_no, host.host(host_mac,host_ip))
+            self.logger.info("dpid %s", dpid)
+            self.logger.info("dpid %s", msg.desc)
+            self.networkMap.findSwitchByDatapath(datapath).add_port(msg.desc)
+            self.networkMap.addPort(port_no, datapath)
         elif reason == ofproto.OFPPR_DELETE:
             host = self.networkMap.findHostByPort(port_no, datapath)
             print "wwwwwwwwwwwHostwwwwwwwwwwwwww"
             print host
             print "wwwwwwwwwwwHostwwwwwwwwwwwwww"
-            self.networkMap.deactivateHost(host)
-            host_ip = host.ip
-            print "wwwwwwwwwwwHostwwwwwwwwwwwwww"
-            print host_ip
-            print "wwwwwwwwwwwHostwwwwwwwwwwwwww"
-            self.logger.info("port deleted %s", port_no)
-            match = parser.OFPMatch(ipv4_src=host_ip, eth_type=0x0800)
-            self.del_flow(datapath, match, out_port=ofproto.OFPP_ANY, out_group=ofproto.OFPG_ANY)
-            match = parser.OFPMatch(ipv4_dst=host_ip, eth_type = 0x0800)
-            self.del_flow(datapath, match, out_port=ofproto.OFPP_ANY, out_group=ofproto.OFPG_ANY)
+            if host is not None:
+                self.networkMap.deactivateHost(host)
+                self.networkMap.delPort(self.networkMap.findPortByPath(datapath.id, port_no ))
+                switch = self.networkMap.findSwitchByDatapath(datapath)
+                switch.ports.remove(Port(switch.dp.id, switch.dp.ofproto, msg.desc))
+                host_ip = host.ip
+                print "wwwwwwwwwwwHostwwwwwwwwwwwwww"
+                print host_ip
+                print "wwwwwwwwwwwHostwwwwwwwwwwwwww"
+                self.logger.info("port deleted %s", port_no)
+                match = parser.OFPMatch(ipv4_src=host_ip, eth_type=0x0800)
+                self.del_flow(datapath, match, out_port=ofproto.OFPP_ANY, out_group=ofproto.OFPG_ANY)
+                match = parser.OFPMatch(ipv4_dst=host_ip, eth_type = 0x0800)
+                self.del_flow(datapath, match, out_port=ofproto.OFPP_ANY, out_group=ofproto.OFPG_ANY)
+            else:
+                LOG.debug("There was no Host found on the deleted port")
         elif reason == ofproto.OFPPR_MODIFY:
             self.logger.info("port modified %s", port_no)
         else:

@@ -102,9 +102,9 @@ class netmap:
                             self.dDummy, self.findInactiveHostByMac(host.mac))
                         return
 
-    def findPortByPath(self, dp, port_no):
+    def findPortByPath(self, dpid, port_no):
         for switch in self.networkMap.nodes:
-            if isinstance(switch, Switch) and (switch.dp.id == dp):
+            if isinstance(switch, Switch) and (switch.dp.id == dpid):
                 for port in self.networkMap.neighbors(switch):
                     if isinstance(port, Port) and port.port_no == port_no:
                         return port
@@ -118,6 +118,23 @@ class netmap:
         self.networkMap.add_node(switch)
         for port in switch.ports:
             self.networkMap.add_edge(switch, port)
+
+    def addPort(self, port_no, datapath):
+        for switch in self.networkMap.nodes:
+            if isinstance(switch, Switch):
+                print("Found a switch")
+                #if switch.dp == datapath:
+                print("Switch found")
+                print(switch.dp.id)
+                for port in switch.ports:
+                    print(str(port))
+                    if port.port_no == port_no and switch.dp == datapath:
+                        print("Port found")
+                        self.networkMap.add_edge(switch, port)
+                        return
+
+    def delPort(self, port):
+        self.networkMap.remove_node(port)
 
     def addActiveHost(self, datapath, port, host):
         if not self.isInactiveHost(host.mac):
