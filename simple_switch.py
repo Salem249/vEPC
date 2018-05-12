@@ -215,19 +215,15 @@ class SimpleSwitch(app_manager.RyuApp):
 
                     LOG.debug("###More than one Switch detected###")
                     path = nx.shortest_path(self.networkMap.networkMap,self.networkMap.findSwitchByDatapath(datapath),self.networkMap.findSwitchByHostMac(eth.dst))
-                    print("---- Way to go ", str(path))
                     for item in range(1,(len(path)-1)):
                         if isinstance(path[item], Port) and isinstance(path[item-1], Switch):
                             datapath = path[item-1].dp
                             port_no = path[item].port_no
                             match = datapath.ofproto_parser.OFPMatch(in_port=in_port, ipv4_dst=p_ipv4.dst, ipv4_src=p_ipv4.src, eth_type = 0x0800)
                             actions = [datapath.ofproto_parser.OFPActionOutput(port_no)]
-                            #LOG.debug("out_port to the next hope is", str(port_no))
                             self.add_flow(datapath, port_no, actions, match)
                         else:
                             LOG.debug("---- Error in establishing multiflow.")
-                            
-                    LOG.debug("###TO BE IMPLEMENTED###")
                 else:
                     match = datapath.ofproto_parser.OFPMatch(
             	    in_port=in_port, ipv4_dst=p_ipv4.dst, ipv4_src=p_ipv4.src, eth_type = 0x0800)
@@ -260,6 +256,14 @@ class SimpleSwitch(app_manager.RyuApp):
         if ev.switch is not None:
             switch = ev.switch
             self.networkMap.addSwitch(switch)
+
+    @set_ev_cls(event.EventSwitchLeave)
+    def remove_topology_data(self, ev):
+        if ev.switch is not None:
+            switch = ev.switch
+            self.networkMap.delSwitch(switch)
+            if len(self.networkMap.getAllSwitches()) == 0:
+                self.networkMap.flushInactiveHosts()
 
 
     def _send_packet(self, datapath, actions, pkt, in_port):
@@ -311,10 +315,7 @@ class SimpleSwitch(app_manager.RyuApp):
             print host
             print "wwwwwwwwwwwHostwwwwwwwwwwwwww"
             if host is not None:
-                self.networkMap.deactivateHost(host)
-                self.networkMap.delPort(self.networkMap.findPortByPath(datapath.id, port_no ))
-                switch = self.networkMap.findSwitchByDatapath(datapath)
-                switch.ports.remove(Port(switch.dp.id, switch.dp.ofproto, msg.desc))
+                self.networkMap.deleteHost(host)
                 host_ip = host.ip
                 print "wwwwwwwwwwwHostwwwwwwwwwwwwww"
                 print host_ip
@@ -326,6 +327,10 @@ class SimpleSwitch(app_manager.RyuApp):
                 self.del_flow(datapath, match, out_port=ofproto.OFPP_ANY, out_group=ofproto.OFPG_ANY)
             else:
                 LOG.debug("There was no Host found on the deleted port")
+            switch = self.networkMap.findSwitchByDatapath(datapath)
+            self.networkMap.delPort(self.networkMap.findPortByPath(datapath.id, port_no))
+            switch.ports.remove(Port(switch.dp.id, switch.dp.ofproto, msg.desc))
+            
         elif reason == ofproto.OFPPR_MODIFY:
             self.logger.info("port modified %s", port_no)
         else:

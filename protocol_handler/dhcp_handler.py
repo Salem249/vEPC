@@ -183,4 +183,3 @@ class dhcp_handler:
             state = 'DHCPACK'
         return state
 
-

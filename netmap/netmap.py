@@ -92,6 +92,21 @@ class netmap:
                         self.networkMap.add_edge(self.dDummy, thing)
                         return
 
+    def deleteHost(self, searchHost):
+        for thing in self.networkMap.nodes:
+            if isinstance(thing, host) and thing == searchHost:
+                for port in self.networkMap.neighbors(thing):
+                    if isinstance(port, Port):
+                        self.networkMap.remove_node(thing)
+                        return
+
+    def delSwitch(self, todelete):
+        for switch in self.networkMap.nodes:
+            if isinstance(switch, Switch):
+                if switch.dp.id == todelete.dp.id:
+                    self.networkMap.remove_node(switch)
+                    return
+
     def activateHost(self, host, datapath, port_no):
         for switch in self.networkMap.nodes:
             if isinstance(switch, Switch) and switch.dp == datapath:
@@ -122,16 +137,11 @@ class netmap:
     def addPort(self, port_no, datapath):
         for switch in self.networkMap.nodes:
             if isinstance(switch, Switch):
-                print("Found a switch")
-                #if switch.dp == datapath:
-                print("Switch found")
-                print(switch.dp.id)
-                for port in switch.ports:
-                    print(str(port))
-                    if port.port_no == port_no and switch.dp == datapath:
-                        print("Port found")
-                        self.networkMap.add_edge(switch, port)
-                        return
+                if switch.dp == datapath:
+                    for port in switch.ports:
+                        if port.port_no == port_no and switch.dp == datapath:
+                            self.networkMap.add_edge(switch, port)
+                            return
 
     def delPort(self, port):
         self.networkMap.remove_node(port)
@@ -148,6 +158,14 @@ class netmap:
         if not self.findInactiveHostByMac(host.mac):
             self.networkMap.add_edge(self.dDummy, host)
             self.report()
+
+    def flushInactiveHosts(self):
+        todelete = []
+        for node in self.networkMap.neighbors(self.dDummy):
+            if isinstance(node, host):
+                todelete.append(node)
+            
+        self.networkMap.remove_nodes_from(todelete)
 
     def report(self):
         for switch in self.networkMap.nodes:
