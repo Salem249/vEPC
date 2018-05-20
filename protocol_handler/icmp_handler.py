@@ -28,17 +28,12 @@ class icmp_handler:
                     return p
 
     def handle(self, p_ipv4, msg, in_port, eth, callback):
-        #pkt = packet.Packet(data=msg.data)
-        #p_arp = self._find_protocol(pkt, "arp")
-        #p_ipv4 = self._find_protocol()
         datapath = msg.datapath
-        #parser = datapath.ofproto_parser
         ofproto = datapath.ofproto
-        #parser = datapath.ofproto_parser
 
         LOG.debug("--- ICMP Packet!: \nIP Address src:%s\nIP Address Dest:%s\n",
                   p_ipv4.src, p_ipv4.dst)
-        #self.netMap.mac_to_port[dpid][eth.src] = in_port
+
         if self.networkMap.findActiveHostByMac(eth.dst):
             LOG.debug("This adress has been found!")
             if self.networkMap.isInactiveHost(eth.src):
@@ -78,7 +73,7 @@ class icmp_handler:
             else:
                 match = datapath.ofproto_parser.OFPMatch(
                     in_port=in_port, ipv4_dst=p_ipv4.dst, ipv4_src=p_ipv4.src, eth_type=0x0800)
-                #self.add_flow(datapath, out_port, actions, match)
+
                 callback(datapath, out_port, actions, match)
 
 
