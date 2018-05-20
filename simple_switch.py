@@ -159,6 +159,14 @@ class SimpleSwitch(app_manager.RyuApp):
             switch = ev.switch
             self.networkMap.addSwitch(switch)
 
+    @set_ev_cls(event.EventSwitchLeave)
+    def remove_topology_data(self, ev):
+        if ev.switch is not None:
+            switch = ev.switch
+            self.networkMap.delSwitch(switch)
+            if len(self.networkMap.getAllSwitches()) == 0:
+                self.networkMap.flushInactiveHosts()
+
 
     def _send_packet(self, datapath, actions, pkt, in_port):
         ofproto = datapath.ofproto
@@ -206,10 +214,7 @@ class SimpleSwitch(app_manager.RyuApp):
         elif reason == ofproto.OFPPR_DELETE:
             host = self.networkMap.findHostByPort(port_no, datapath)
             if host is not None:
-                self.networkMap.deactivateHost(host)
-                self.networkMap.delPort(self.networkMap.findPortByPath(datapath.id, port_no ))
-                switch = self.networkMap.findSwitchByDatapath(datapath)
-                switch.ports.remove(Port(switch.dp.id, switch.dp.ofproto, msg.desc))
+                self.networkMap.deleteHost(host)
                 host_ip = host.ip
                 self.logger.info("port deleted %s", port_no)
                 match = parser.OFPMatch(ipv4_src=host_ip, eth_type=0x0800)
@@ -218,6 +223,10 @@ class SimpleSwitch(app_manager.RyuApp):
                 self.del_flow(datapath, match, out_port=ofproto.OFPP_ANY, out_group=ofproto.OFPG_ANY)
             else:
                 LOG.debug("There was no Host found on the deleted port")
+            switch = self.networkMap.findSwitchByDatapath(datapath)
+            self.networkMap.delPort(self.networkMap.findPortByPath(datapath.id, port_no))
+            switch.ports.remove(Port(switch.dp.id, switch.dp.ofproto, msg.desc))
+            
         elif reason == ofproto.OFPPR_MODIFY:
             self.logger.info("port modified %s", port_no)
         else:
