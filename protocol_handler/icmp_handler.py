@@ -1,9 +1,6 @@
 import networkx.algorithms as nx
 # Python Standard
 import logging
-import array
-import thread
-import struct
 import host
 
 
@@ -11,8 +8,6 @@ import host
 from ryu.ofproto import ofproto_v1_2
 from ryu.topology.switches import Switch
 from ryu.topology.switches import Port
-
-from netmap import netmap
 
 LOG = logging.getLogger(__name__)
 
