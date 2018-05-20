@@ -27,9 +27,12 @@ from ryu.topology.switches import Switch
 from ryu.topology.switches import Port
 
 
+
 from protocol_handler import dhcp_handler
 from protocol_handler import lldp_handler
 from protocol_handler import arp_handler
+from protocol_handler import icmp_handler
+from protocol_handler import nat_handler
 from netmap import netmap
 
 
@@ -43,7 +46,7 @@ class SimpleSwitch(app_manager.RyuApp):
         LOG.debug("--- Add FLow matching based on IPAddress")
         ofproto = datapath.ofproto
 
-        instructions =[datapath.ofproto_parser.OFPInstructionActions(ofproto_v1_2.OFPIT_APPLY_ACTIONS, actions=actions)]
+        instructions = [datapath.ofproto_parser.OFPInstructionActions(ofproto_v1_2.OFPIT_APPLY_ACTIONS, actions=actions)]
 
         mod = datapath.ofproto_parser.OFPFlowMod(
             datapath=datapath, match=match, cookie=0, cookie_mask=0,
@@ -55,10 +58,13 @@ class SimpleSwitch(app_manager.RyuApp):
         LOG.debug("--- delete FLow matching based on IPAddress")
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
-        mod = parser.OFPFlowMod(
-            datapath=datapath, match=match, cookie=0,
-            command=ofproto.OFPFC_DELETE, out_port=out_port, out_group=out_group)
-        datapath.send_msg(mod)
+        for switch in self.networkMap.getAllSwitches():
+            if isinstance(switch, Switch):
+                datapath = switch.dp
+                mod = parser.OFPFlowMod(
+                    datapath=datapath, match=match, cookie=0,
+                    command=ofproto.OFPFC_DELETE, out_port=out_port, out_group=out_group)
+                datapath.send_msg(mod)
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def _switch_features_handler(self, ev):
@@ -84,6 +90,10 @@ class SimpleSwitch(app_manager.RyuApp):
         self.networkMap = netmap.netmap()
         #Instance of DHCP Handler
         self.dhcph = dhcp_handler.dhcp_handler(self.networkMap)
+        #Instance of icmp_handler
+        self.icmp = icmp_handler.icmp_handler(self.networkMap)
+        #Instance of nat_handler
+        self.nat = nat_handler.nat_handler(self.networkMap)
         #Instance of Arp Handler
         self.arph = arp_handler.arp_handler(self.networkMap)
         #Instance of LLDP Handler
@@ -111,134 +121,26 @@ class SimpleSwitch(app_manager.RyuApp):
         pkt = packet.Packet(data=msg.data)
         eth = pkt.get_protocol(ethernet.ethernet)
         dpid = datapath.id
-        p_icmp = self._find_protocol(pkt, "icmp")
-        p_ipv4 = self._find_protocol(pkt, "ipv4")
         pkt_tcp = self._find_protocol(pkt,"tcp")
         pkt_udp = self._find_protocol(pkt,"udp")
+        p_ipv4 = self._find_protocol(pkt, "ipv4")
+        p_icmp = self._find_protocol(pkt, "icmp")
 
         # The flow rules of NAT
         if pkt_tcp and p_ipv4:
             print "@@@ Install TCP Flow Entry @@@"
             tcp_src = pkt_tcp.src_port
             tcp_dst = pkt_tcp.dst_port
+            self.nat.tcp_handle(tcp_src, tcp_dst, p_ipv4, msg, in_port, eth, self.add_flow)
+        elif pkt_udp and p_ipv4 and not pkt.get_protocols(dhcp.dhcp):
+            print "@@@ Install UDP Flow Entry @@@"
+            udp_src = pkt_udp.src_port
+            udp_dst = pkt_udp.dst_port
+            self.nat.tcp_handle(udp_src, udp_dst, p_ipv4, msg, in_port, eth, self.add_flow)
 
-            #self.mac_to_port[dpid][eth.src] = in_port
-            if self.networkMap.findActiveHostByMac(eth.dst):
-                out_port = self.networkMap.findPortByHostMac(eth.dst).port_no
-            else:
-                out_port = ofproto.OFPP_FLOOD
-
-            match = parser.OFPMatch(in_port=in_port,
-                                    eth_type=0x0800,
-                                    ip_proto=inet.IPPROTO_TCP,
-                                    ipv4_src=p_ipv4.src,
-                                    ipv4_dst=p_ipv4.dst,
-                                    tcp_src=tcp_src,
-                                    tcp_dst=tcp_dst)
-
-            actions = [parser.OFPActionSetField(ipv4_src=p_ipv4.src),
-                       parser.OFPActionSetField(tcp_src=tcp_src),
-                       parser.OFPActionOutput(out_port)]
-
-            match_back = parser.OFPMatch(eth_type=0x0800,
-                                         ip_proto=inet.IPPROTO_TCP,
-                                         ipv4_src=p_ipv4.dst,
-                                         ipv4_dst=p_ipv4.src,
-                                         tcp_src=tcp_dst,
-                                         tcp_dst=tcp_src)
-
-            actions_back = [parser.OFPActionSetField(ipv4_dst=p_ipv4.src),
-                            parser.OFPActionSetField(tcp_dst=tcp_src),
-                            parser.OFPActionOutput(in_port)]
-
-            self.add_flow(datapath, out_port, match=match, actions=actions)
-            self.add_flow(datapath, out_port, match=match_back, actions=actions_back)
-        # elif pkt_udp and p_ipv4:
-        #     print "@@@ Install UDP Flow Entry @@@"
-        #     udp_src = pkt_udp.src_port
-        #     udp_dst = pkt_udp.dst_port
-
-        #     if self.networkMap.findActiveHostByMac(eth.dst):
-        #         out_port = self.networkMap.findPortByHostMac(eth.dst).port_no
-        #     else:
-        #         out_port = ofproto.OFPP_FLOOD
-
-        #     match = parser.OFPMatch(in_port=in_port,
-        #                             eth_type=0x0800,
-        #                             ip_proto=inet.IPPROTO_UDP,
-        #                             ipv4_src=p_ipv4.src,
-        #                             ipv4_dst=p_ipv4.dst,
-        #                             udp_src=udp_src,
-        #                             udp_dst=udp_dst)
-
-        #     actions = [parser.OFPActionSetField(ipv4_src=p_ipv4.src),
-        #                parser.OFPActionSetField(udp_src=udp_src),
-        #                parser.OFPActionOutput(out_port)]
-
-        #     match_back = parser.OFPMatch(eth_type=0x0800,
-        #                                  ip_proto=inet.IPPROTO_UDP,
-        #                                  ipv4_src=p_ipv4.dst,
-        #                                  ipv4_dst=p_ipv4.src,
-        #                                  udp_src=udp_dst,
-        #                                  udp_dst=udp_src)
-
-        #     actions_back = [parser.OFPActionSetField(ipv4_dst=p_ipv4.src),
-        #                     parser.OFPActionSetField(udp_dst=udp_src),
-        #                     parser.OFPActionOutput(in_port)]
-
-        #     self.add_flow(datapath, out_port, match=match, actions=actions)
-        #     self.add_flow(datapath, out_port, match=match_back, actions=actions_back)
-
-
-
-        # The flow rules with test of icmp
-        
-
+        #The flow rules with test of icmp
         if p_ipv4 and p_icmp:
-            LOG.debug("--- ICMP Packet!: \nIP Address src:%s\nIP Address Dest:%s\n", p_ipv4.src, p_ipv4.dst)
-            #self.netMap.mac_to_port[dpid][eth.src] = in_port
-            if self.networkMap.findActiveHostByMac(eth.dst):
-                LOG.debug("This adress has been found!")
-                if self.networkMap.isInactiveHost(eth.src):
-                    LOG.debug("Activate Host...")
-                    self.networkMap.addActiveHost(datapath, msg.match['in_port'], host.host(eth.src,p_ipv4.src))
-                out_port = self.networkMap.findPortByHostMac(eth.dst).port_no
-            else:
-                 out_port = ofproto.OFPP_FLOOD
-
-            actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
-            #LOG.debug("out_port to the destination host is ", out_port)
-            # install a flow to avoid packet_in next time
-            if out_port != ofproto.OFPP_FLOOD:
-                if (self.networkMap.findSwitchByDatapath(datapath) != self.networkMap.findSwitchByHostMac(eth.dst)):
-
-
-                    LOG.debug("###More than one Switch detected###")
-                    path = nx.shortest_path(self.networkMap.networkMap,self.networkMap.findSwitchByDatapath(datapath),self.networkMap.findSwitchByHostMac(eth.dst))
-                    for item in range(1,(len(path)-1)):
-                        if isinstance(path[item], Port) and isinstance(path[item-1], Switch):
-                            datapath = path[item-1].dp
-                            port_no = path[item].port_no
-                            match = datapath.ofproto_parser.OFPMatch(in_port=in_port, ipv4_dst=p_ipv4.dst, ipv4_src=p_ipv4.src, eth_type = 0x0800)
-                            actions = [datapath.ofproto_parser.OFPActionOutput(port_no)]
-                            self.add_flow(datapath, port_no, actions, match)
-                        else:
-                            LOG.debug("---- Error in establishing multiflow.")
-                else:
-                    match = datapath.ofproto_parser.OFPMatch(
-            	    in_port=in_port, ipv4_dst=p_ipv4.dst, ipv4_src=p_ipv4.src, eth_type = 0x0800)
-                    self.add_flow(datapath, out_port, actions, match)
-
-            data = None
-
-            if msg.buffer_id == ofproto.OFP_NO_BUFFER:
-                data = msg.data
-
-            out = datapath.ofproto_parser.OFPPacketOut(
-                datapath=datapath, buffer_id=msg.buffer_id, in_port=in_port,
-                actions=actions, data=data)
-            datapath.send_msg(out)
-
+            self.icmp.handle(p_ipv4, msg, in_port, eth, self.add_flow)
         elif self._find_protocol(pkt, "arp"):
             self.arph.handle(msg, self._send_packet)
         elif self._find_protocol(pkt, "lldp"):
@@ -311,15 +213,9 @@ class SimpleSwitch(app_manager.RyuApp):
             self.networkMap.addPort(port_no, datapath)
         elif reason == ofproto.OFPPR_DELETE:
             host = self.networkMap.findHostByPort(port_no, datapath)
-            print "wwwwwwwwwwwHostwwwwwwwwwwwwww"
-            print host
-            print "wwwwwwwwwwwHostwwwwwwwwwwwwww"
             if host is not None:
                 self.networkMap.deleteHost(host)
                 host_ip = host.ip
-                print "wwwwwwwwwwwHostwwwwwwwwwwwwww"
-                print host_ip
-                print "wwwwwwwwwwwHostwwwwwwwwwwwwww"
                 self.logger.info("port deleted %s", port_no)
                 match = parser.OFPMatch(ipv4_src=host_ip, eth_type=0x0800)
                 self.del_flow(datapath, match, out_port=ofproto.OFPP_ANY, out_group=ofproto.OFPG_ANY)
