@@ -1,9 +1,6 @@
-import networkx.algorithms as nx
 # Python Standard
 import logging
-import array
-import thread
-import struct
+
 import host
 
 
@@ -11,8 +8,6 @@ import host
 from ryu.ofproto import ofproto_v1_2
 from ryu.ofproto import inet
 
-
-from netmap import netmap
 
 LOG = logging.getLogger(__name__)
 
@@ -34,8 +29,9 @@ class nat_handler:
 
         if self.networkMap.findActiveHostByMac(eth.dst):
             out_port = self.networkMap.findPortByHostMac(eth.dst).port_no
-        else:
-            out_port = ofproto.OFPP_FLOOD
+        #else:
+            #out_port = out_port
+            print  "else:"
             match = parser.OFPMatch(in_port=in_port,
                                     eth_type=0x0800,
                                     ip_proto=inet.IPPROTO_TCP,
@@ -47,6 +43,8 @@ class nat_handler:
                        parser.OFPActionSetField(tcp_src=tcp_src),
                        parser.OFPActionOutput(out_port)]
 
+            callback(datapath, out_port, actions, match)
+
             match_back = parser.OFPMatch(eth_type=0x0800,
                                          ip_proto=inet.IPPROTO_TCP,
                                          ipv4_src=p_ipv4.dst,
@@ -57,12 +55,8 @@ class nat_handler:
                             parser.OFPActionSetField(tcp_dst=tcp_src),
                             parser.OFPActionOutput(in_port)]
 
-            #self.add_flow(datapath, out_port, match=match, actions=actions)
-            callback(datapath, out_port, match=match, actions=actions)
+            callback(datapath, out_port, actions, match_back)
 
-            #self.add_flow(datapath, out_port, match=match_back, actions=actions_back)
-            callback(datapath, out_port, match=match_back,
-                     actions=actions_back)
 
     def udp_handle(self, udp_src, udp_dst, p_ipv4, msg, in_port, eth, callback):
         datapath = msg.datapath
@@ -71,8 +65,8 @@ class nat_handler:
 
         if self.networkMap.findActiveHostByMac(eth.dst):
             out_port = self.networkMap.findPortByHostMac(eth.dst).port_no
-        else:
-            out_port = ofproto.OFPP_FLOOD
+        #else:
+            #out_port = ofproto.OFPP_FLOOD
 
         match = parser.OFPMatch(in_port=in_port,
                                 eth_type=0x0800,
@@ -93,13 +87,10 @@ class nat_handler:
                                      udp_src=udp_dst,
                                      udp_dst=udp_src)
 
+        callback(datapath, out_port, actions, match)
+
         actions_back = [parser.OFPActionSetField(ipv4_dst=p_ipv4.src),
                         parser.OFPActionSetField(udp_dst=udp_src),
                         parser.OFPActionOutput(in_port)]
 
-        #self.add_flow(datapath, out_port, match=match, actions=actions)
-        callback(datapath, out_port, match=match, actions=actions)
-
-        # self.add_flow(datapath, out_port, match=match_back,
-        #               actions=actions_back)
-        callback(datapath, out_port, match=match_back, actions=actions_back)
+        callback(datapath, out_port, actions, match_back)
