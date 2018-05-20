@@ -69,6 +69,7 @@ class MobilitySwitch( OVSSwitch ):
     def moveHost(self, host, old, new):
         h1, olds, news = net.get(host, old, new)
         hintf, sintf = moveHost(h1, olds, news, newPort=12)
+        startDHCPclient(h1)
         info( '*', hintf, 'is now connected to', sintf, '\n')
 
     def addHost(self, name, net):
@@ -109,7 +110,7 @@ topos = { 'mytopo': ( lambda: MyTopo() ) }
 def startDHCPclient(host):
         info("Start dhcp client on\n", host)
         inf = host.defaultIntf()
-        info("+dhclient -4 -v -1", inf)
+        info("+dhclient -4 -v -1 -r", inf)
         info(host.cmd('dhclient -4 -v -1', inf))
         
 
