@@ -31,7 +31,6 @@ class nat_handler:
             out_port = self.networkMap.findPortByHostMac(eth.dst).port_no
         # else:
             #out_port = out_port
-            print "else:"
             match = parser.OFPMatch(in_port=in_port,
                                     eth_type=0x0800,
                                     ip_proto=inet.IPPROTO_TCP,
@@ -66,7 +65,6 @@ class nat_handler:
             out_port = self.networkMap.findPortByHostMac(eth.dst).port_no
         # else:
             #out_port = ofproto.OFPP_FLOOD
-
         match = parser.OFPMatch(in_port=in_port,
                                 eth_type=0x0800,
                                 ip_proto=inet.IPPROTO_UDP,
@@ -92,4 +90,4 @@ class nat_handler:
                         parser.OFPActionSetField(udp_dst=udp_src),
                         parser.OFPActionOutput(in_port)]
 
-        callback(datapath, out_port, actions, match_back)
+        callback(datapath, out_port, actions_back, match_back)
