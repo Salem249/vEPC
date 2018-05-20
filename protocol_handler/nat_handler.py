@@ -29,9 +29,9 @@ class nat_handler:
 
         if self.networkMap.findActiveHostByMac(eth.dst):
             out_port = self.networkMap.findPortByHostMac(eth.dst).port_no
-        #else:
+        # else:
             #out_port = out_port
-            print  "else:"
+            print "else:"
             match = parser.OFPMatch(in_port=in_port,
                                     eth_type=0x0800,
                                     ip_proto=inet.IPPROTO_TCP,
@@ -55,8 +55,7 @@ class nat_handler:
                             parser.OFPActionSetField(tcp_dst=tcp_src),
                             parser.OFPActionOutput(in_port)]
 
-            callback(datapath, out_port, actions, match_back)
-
+            callback(datapath, out_port, actions_back, match_back)
 
     def udp_handle(self, udp_src, udp_dst, p_ipv4, msg, in_port, eth, callback):
         datapath = msg.datapath
@@ -65,7 +64,7 @@ class nat_handler:
 
         if self.networkMap.findActiveHostByMac(eth.dst):
             out_port = self.networkMap.findPortByHostMac(eth.dst).port_no
-        #else:
+        # else:
             #out_port = ofproto.OFPP_FLOOD
 
         match = parser.OFPMatch(in_port=in_port,
