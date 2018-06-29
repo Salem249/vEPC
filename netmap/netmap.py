@@ -164,7 +164,7 @@ class netmap:
         for node in self.networkMap.neighbors(self.dDummy):
             if isinstance(node, host):
                 todelete.append(node)
-            
+
         self.networkMap.remove_nodes_from(todelete)
 
     def report(self):

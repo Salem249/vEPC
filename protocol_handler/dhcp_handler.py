@@ -67,7 +67,7 @@ class dhcp_handler:
             return None
         return self.ip_current
 
-    def _handle_dhcp(self, msg, callback):
+    def _handle_dhcp(self, msg, datapath, callback):
         pkt = packet.Packet(data=msg.data)
         parser = msg.datapath.ofproto_parser
         ofproto = msg.datapath.ofproto
@@ -79,11 +79,14 @@ class dhcp_handler:
                 ip = known.ip
             else:
                 ip = self._getNextAddr()
+                self.networkMap.addActiveHost(
+                    datapath, msg.match['in_port'], host.host(pkt.get_protocol(
+                        ethernet.ethernet).src, ip))
 
             if ip:
                 ans = self.assemble_offer(pkt,ip)
                 if ans:
-                    self.networkMap.addInactiveHost(host.host(pkt.get_protocol(ethernet.ethernet).src, ip))
+                    # self.networkMap.addInactiveHost(host.host(pkt.get_protocol(ethernet.ethernet).src, ip))
                     actions = [parser.OFPActionOutput(port=msg.match['in_port'])]
                     callback(msg.datapath, actions, ans, ofproto.OFPP_CONTROLLER)
             else:
@@ -102,7 +105,7 @@ class dhcp_handler:
         req_ipv4 = pkt.get_protocol(ipv4.ipv4)
         req_udp = pkt.get_protocol(udp.udp)
         req = pkt.get_protocol(dhcp.dhcp)
-        if not (self.networkMap.findInactiveHostByMac(req_eth.src)):
+        if not (self.networkMap.findActiveHostByMac(req_eth.src)):
             return
         req.options.option_list.remove(
             next(opt for opt in req.options.option_list if opt.tag == 53))
@@ -125,7 +128,7 @@ class dhcp_handler:
         ack_pkt.add_protocol(dhcp.dhcp(op=2, chaddr=req_eth.src,
                                        siaddr=self.dhcp_server,
                                        boot_file=req.boot_file,
-                                       yiaddr=(self.networkMap.findInactiveHostByMac(req_eth.src).ip),
+                                       yiaddr=(self.networkMap.findActiveHostByMac(req_eth.src).ip),
                                        xid=req.xid,
                                        options=req.options))
         ack_pkt.serialize()
