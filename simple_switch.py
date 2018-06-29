@@ -150,12 +150,6 @@ class SimpleSwitch(app_manager.RyuApp):
             self.dhcph._handle_dhcp(msg, datapath, self._send_packet)
         if p_ipv4:
             if p_ipv4.dst in self.movedHosts:
-                print "p_ipv4.dst in self.movedHosts"
-                print "eth.dst"
-                print eth.dst
-                print "eth.src"
-                print eth.src
-
                 datapath = msg.datapath
                 ofproto = datapath.ofproto
 
@@ -165,9 +159,6 @@ class SimpleSwitch(app_manager.RyuApp):
                 # crafting fake arp
                 src_mac = eth.src
                 print "crafting fake arp"
-                print src_mac
-                print p_ipv4.src
-                print p_ipv4.dst
                 dst_mac = self.movedHosts.get(p_ipv4.dst, "none")
                 e = ethernet.ethernet(
                     src_mac, dst_mac, ether.ETH_TYPE_ARP)
@@ -219,8 +210,6 @@ class SimpleSwitch(app_manager.RyuApp):
 
                                 port_no = self.networkMap.findPortByHostMac(
                                     eth.src).port_no
-                                print "port_no = self.networkMap.findPortByHostMac("
-                                print port_no
                                 match = datapath.ofproto_parser.OFPMatch(
                                     ipv4_src=p_ipv4.dst, ipv4_dst=p_ipv4.src, eth_type=0x0800)
                                 actions = [
@@ -348,8 +337,6 @@ class SimpleSwitch(app_manager.RyuApp):
             if host is not None:
                 self.networkMap.deleteHost(host)
                 self.movedHosts[host.ip] = host.mac
-                print "self.movedHosts"
-                print self.movedHosts
                 self.logger.info("port deleted %s", port_no)
                 match = parser.OFPMatch(ipv4_src=host.ip, eth_type=0x0800)
                 self.del_flow(
