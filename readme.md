@@ -1,7 +1,7 @@
 # EPC
 a Software Defined Controller for mobile device and IP swap support based on ryu.
 
-Test it
+## Test it
 
 There is a testcase based on mininet included. To run it follow this manual.
 
@@ -16,10 +16,10 @@ There is a testcase based on mininet included. To run it follow this manual.
 The shape of the network is:
 
  (h1)    
- |
-(s1)--(s2)--(s3)   
- |
-(h2)   
+ |  
+(s1)--(s2)--(s3)  
+ |  
+(h2)     
 
 * Use the method `s1.moveHost(hostname, old_switch, new_switch)` to move a host from one switch to another
 * With the method sh `ovs-ofctl dump-flows <switch>` you can have a look at the installed flows on each switch
