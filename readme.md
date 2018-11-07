@@ -1,4 +1,4 @@
-# EPC
+# vEPC
 a Software Defined Controller for mobile device and IP swap support based on ryu.
 
 ## Test it
